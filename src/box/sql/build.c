@@ -215,8 +215,6 @@ sqlite3FinishCoding(Parse * pParse)
 						     pSchema->schema_cookie,	/* P3 */
 						     pSchema->iGeneration	/* P4 */
 				    );
-				if (pParse->initiateTTrans)
-					sqlite3VdbeAddOp0(v, OP_TTransaction);
 
 				if (db->init.busy == 0)
 					sqlite3VdbeChangeP5(v, 1);
@@ -224,6 +222,9 @@ sqlite3FinishCoding(Parse * pParse)
 				VdbeComment((v, "usesStmtJournal=%d",
 					     pParse->mayAbort
 					     && pParse->isMultiWrite));
+
+				if (pParse->initiateTTrans)
+					sqlite3VdbeAddOp0(v, OP_TTransaction);
 			}
 
 			/* Once all the cookies have been verified and transactions opened,
