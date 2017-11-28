@@ -65,13 +65,13 @@ sqlite3VdbeCreate(Parse * pParse)
 	db->pVdbe = p;
 	p->magic = VDBE_MAGIC_INIT;
 	p->pParse = pParse;
-	p->autoCommit = (char)box_txn() == 0 ? 1 : 0;
-	p->isTransactionSavepoint = 0;
-	p->nStatement = 0;
-	p->nSavepoint = 0;
-	p->pSavepoint = 0;
-	p->nDeferredCons = 0;
-	p->nDeferredImmCons = 0;
+	db->autoCommit = (char)box_txn() == 0 ? 1 : 0;
+	db->isTransactionSavepoint = 0;
+	db->nStatement = 0;
+	db->nSavepoint = 0;
+	db->pSavepoint = 0;
+	db->nDeferredCons = 0;
+	db->nDeferredImmCons = 0;
 
 	assert(pParse->aLabel == 0);
 	assert(pParse->nLabel == 0);
@@ -2683,12 +2683,12 @@ sqlite3VdbeCloseStatement(Vdbe * p, int eOp)
 	 * is that an IO error may have occurred, causing an emergency rollback.
 	 * In this case (db->nStatement==0), and there is nothing to do.
 	 */
-	if (p->nStatement && p->iStatement) {
+	if (db->nStatement && p->iStatement) {
 		const int iSavepoint = p->iStatement - 1;
 
 		assert(eOp == SAVEPOINT_ROLLBACK || eOp == SAVEPOINT_RELEASE);
-		assert(p->nStatement > 0);
-		assert(p->iStatement == (p->nStatement + p->nSavepoint));
+		assert(db->nStatement > 0);
+		assert(p->iStatement == (db->nStatement + db->nSavepoint));
 
 		int rc2 = SQLITE_OK;
 		Btree *pBt = db->mdb.pBt;
@@ -2709,7 +2709,7 @@ sqlite3VdbeCloseStatement(Vdbe * p, int eOp)
 				rc = rc2;
 			}
 		}
-		p->nStatement--;
+		db->nStatement--;
 		p->iStatement = 0;
 
 		/* If the statement transaction is being rolled back, also restore the
@@ -2717,8 +2717,8 @@ sqlite3VdbeCloseStatement(Vdbe * p, int eOp)
 		 * the statement transaction was opened.
 		 */
 		if (eOp == SAVEPOINT_ROLLBACK) {
-			p->nDeferredCons = p->nStmtDefCons;
-			p->nDeferredImmCons = p->nStmtDefImmCons;
+			db->nDeferredCons = p->nStmtDefCons;
+			db->nDeferredImmCons = p->nStmtDefImmCons;
 		}
 	}
 	return rc;
@@ -2738,7 +2738,7 @@ sqlite3VdbeCloseStatement(Vdbe * p, int eOp)
 int
 sqlite3VdbeCheckFk(Vdbe * p, int deferred)
 {
-	if ((deferred && (p->nDeferredCons + p->nDeferredImmCons) > 0)
+	if ((deferred && (p->db->nDeferredCons + p->db->nDeferredImmCons) > 0)
 	    || (!deferred && p->nFkConstraint > 0)
 	    ) {
 		p->rc = SQLITE_CONSTRAINT_FOREIGNKEY;
@@ -2836,7 +2836,7 @@ sqlite3VdbeHalt(Vdbe * p)
 					sqlite3RollbackAll(p,
 							   SQLITE_ABORT_ROLLBACK);
 					sqlite3CloseSavepoints(p);
-					p->autoCommit = 1;
+					db->autoCommit = 1;
 					p->nChange = 0;
 				}
 			}
@@ -2853,7 +2853,7 @@ sqlite3VdbeHalt(Vdbe * p)
 		 * Note: This block also runs if one of the special errors handled
 		 * above has occurred.
 		 */
-		if (p->autoCommit) {
+		if (db->autoCommit) {
 			if (p->rc == SQLITE_OK
 			    || (p->errorAction == OE_Fail && !isSpecialError)) {
 				rc = sqlite3VdbeCheckFk(p, 1);
@@ -2888,8 +2888,8 @@ sqlite3VdbeHalt(Vdbe * p)
 					sqlite3RollbackAll(p, SQLITE_OK);
 					p->nChange = 0;
 				} else {
-					p->nDeferredCons = 0;
-					p->nDeferredImmCons = 0;
+					db->nDeferredCons = 0;
+					db->nDeferredImmCons = 0;
 					user_session->sql_flags &=
 					    ~SQLITE_DeferFKs;
 					sqlite3CommitInternalChanges(p->db);
@@ -2900,7 +2900,7 @@ sqlite3VdbeHalt(Vdbe * p)
 				sqlite3RollbackAll(p, SQLITE_OK);
 				p->nChange = 0;
 			}
-			p->nStatement = 0;
+			db->nStatement = 0;
 		} else if (eStatementOp == 0) {
 			if (p->rc == SQLITE_OK || p->errorAction == OE_Fail) {
 				eStatementOp = SAVEPOINT_RELEASE;
@@ -2911,7 +2911,7 @@ sqlite3VdbeHalt(Vdbe * p)
 				closeCursorsAndFree(p);
 				sqlite3RollbackAll(p, SQLITE_ABORT_ROLLBACK);
 				sqlite3CloseSavepoints(p);
-				p->autoCommit = 1;
+				db->autoCommit = 1;
 				p->nChange = 0;
 			}
 		}
@@ -2935,7 +2935,7 @@ sqlite3VdbeHalt(Vdbe * p)
 				closeCursorsAndFree(p);
 				sqlite3RollbackAll(p, SQLITE_ABORT_ROLLBACK);
 				sqlite3CloseSavepoints(p);
-				p->autoCommit = 1;
+				db->autoCommit = 1;
 				p->nChange = 0;
 			}
 		}
@@ -2979,11 +2979,11 @@ sqlite3VdbeHalt(Vdbe * p)
 	 * by connection db have now been released. Call sqlite3ConnectionUnlocked()
 	 * to invoke any required unlock-notify callbacks.
 	 */
-	if (p->autoCommit) {
+	if (db->autoCommit) {
 		sqlite3ConnectionUnlocked(db);
 	}
 
-	assert(db->nVdbeActive > 0 || p->autoCommit == 0 || p->nStatement == 0);
+	assert(db->nVdbeActive > 0 || db->autoCommit == 0 || db->nStatement == 0);
 	return (p->rc == SQLITE_BUSY ? SQLITE_BUSY : SQLITE_OK);
 }
 

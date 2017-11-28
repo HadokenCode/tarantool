@@ -382,13 +382,6 @@ struct Vdbe {
 	i64 nStmtDefCons;	/* Number of def. constraints when stmt started */
 	i64 nStmtDefImmCons;	/* Number of def. imm constraints when stmt started */
 
-	u8 autoCommit;		/* The auto-commit flag. */
-	u8 isTransactionSavepoint;	/* True if the outermost savepoint is a TS */
-	Savepoint *pSavepoint;	/* List of active savepoints */
-	int nSavepoint;		/* Number of non-transaction savepoints */
-	int nStatement;		/* Number of nested statement-transactions  */
-	i64 nDeferredCons;	/* Net deferred constraints this transaction. */
-	i64 nDeferredImmCons;	/* Net deferred immediate constraints */
 
 	/* When allocating a new Vdbe object, all of the fields below should be
 	 * initialized to zero or NULL

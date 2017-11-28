@@ -574,9 +574,10 @@ static int
 checkSavepointCount(Vdbe *v)
 {
 	int n = 0;
+	sqlite3* db = v->db;
 	Savepoint *p;
-	for(p=v->pSavepoint; p; p=p->pNext) n++;
-	assert(n==(v->nSavepoint + v->isTransactionSavepoint));
+	for(p=db->pSavepoint; p; p=p->pNext) n++;
+	assert(n==(db->nSavepoint + db->isTransactionSavepoint));
 	return 1;
 }
 #endif
@@ -1064,7 +1065,7 @@ case OP_Halt: {
 		p->rc = SQLITE_BUSY;
 	} else {
 		assert(rc==SQLITE_OK || (p->rc&0xff)==SQLITE_CONSTRAINT);
-		assert(rc==SQLITE_OK || p->nDeferredCons>0 || p->nDeferredImmCons>0);
+		assert(rc==SQLITE_OK || db->nDeferredCons>0 || db->nDeferredImmCons>0);
 		rc = p->rc ? SQLITE_ERROR : SQLITE_DONE;
 	}
 	goto vdbe_return;
@@ -2869,9 +2870,9 @@ case OP_Savepoint: {
 	/* Assert that the p1 parameter is valid. Also that if there is no open
 	 * transaction, then there cannot be any savepoints.
 	 */
-	assert(p->pSavepoint==0 || p->autoCommit==0);
+	assert(db->pSavepoint==0 || db->autoCommit==0);
 	assert(p1==SAVEPOINT_BEGIN||p1==SAVEPOINT_RELEASE||p1==SAVEPOINT_ROLLBACK);
-	assert(p->pSavepoint || p->isTransactionSavepoint==0);
+	assert(db->pSavepoint || db->isTransactionSavepoint==0);
 	assert(checkSavepointCount(p));
 	assert(p->bIsReader);
 
@@ -2894,18 +2895,18 @@ case OP_Savepoint: {
 				/* If there is no open transaction, then mark this as a special
 				 * "transaction savepoint".
 				 */
-				if (p->autoCommit) {
-					p->autoCommit = 0;
-					p->isTransactionSavepoint = 1;
+				if (db->autoCommit) {
+					db->autoCommit = 0;
+					db->isTransactionSavepoint = 1;
 				} else {
-					p->nSavepoint++;
+					db->nSavepoint++;
 				}
 
 				/* Link the new savepoint into the database handle's list. */
-				pNew->pNext = p->pSavepoint;
-				p->pSavepoint = pNew;
-				pNew->nDeferredCons = p->nDeferredCons;
-				pNew->nDeferredImmCons = p->nDeferredImmCons;
+				pNew->pNext = db->pSavepoint;
+				db->pSavepoint = pNew;
+				pNew->nDeferredCons = db->nDeferredCons;
+				pNew->nDeferredImmCons = db->nDeferredImmCons;
 			}
 		}
 	} else {
@@ -2915,7 +2916,7 @@ case OP_Savepoint: {
 		 * an error is returned to the user.
 		 */
 		for(
-			pSavepoint = p->pSavepoint;
+			pSavepoint = db->pSavepoint;
 			pSavepoint && sqlite3StrICmp(pSavepoint->zName, zName);
 			pSavepoint = pSavepoint->pNext
 			) {
@@ -2937,23 +2938,23 @@ case OP_Savepoint: {
 			 * and this is a RELEASE command, then the current transaction
 			 * is committed.
 			 */
-			int isTransaction = pSavepoint->pNext==0 && p->isTransactionSavepoint;
+			int isTransaction = pSavepoint->pNext==0 && db->isTransactionSavepoint;
 			if (isTransaction && p1==SAVEPOINT_RELEASE) {
 				if ((rc = sqlite3VdbeCheckFk(p, 1))!=SQLITE_OK) {
 					goto vdbe_return;
 				}
-				p->autoCommit = 1;
+				db->autoCommit = 1;
 				if (sqlite3VdbeHalt(p)==SQLITE_BUSY) {
 					p->pc = (int)(pOp - aOp);
-					p->autoCommit = 0;
+					db->autoCommit = 0;
 					p->rc = rc = SQLITE_BUSY;
 					goto vdbe_return;
 				}
-				p->isTransactionSavepoint = 0;
+				db->isTransactionSavepoint = 0;
 				rc = p->rc;
 			} else {
 				int isSchemaChange;
-				iSavepoint = p->nSavepoint - iSavepoint - 1;
+				iSavepoint = db->nSavepoint - iSavepoint - 1;
 				if (p1==SAVEPOINT_ROLLBACK) {
 					isSchemaChange = (user_session->sql_flags & SQLITE_InternChanges)!=0;
 					rc = sqlite3BtreeTripAllCursors(db->mdb.pBt,
@@ -2977,11 +2978,11 @@ case OP_Savepoint: {
 			/* Regardless of whether this is a RELEASE or ROLLBACK, destroy all
 			 * savepoints nested inside of the savepoint being operated on.
 			 */
-			while( p->pSavepoint!=pSavepoint) {
-				pTmp = p->pSavepoint;
-				p->pSavepoint = pTmp->pNext;
+			while( db->pSavepoint!=pSavepoint) {
+				pTmp = db->pSavepoint;
+				db->pSavepoint = pTmp->pNext;
 				sqlite3DbFree(db, pTmp);
-				p->nSavepoint--;
+				db->nSavepoint--;
 			}
 
 			/* If it is a RELEASE, then destroy the savepoint being operated on
@@ -2990,15 +2991,15 @@ case OP_Savepoint: {
 			 * when the savepoint was created.
 			 */
 			if (p1==SAVEPOINT_RELEASE) {
-				assert(pSavepoint==p->pSavepoint);
-				p->pSavepoint = pSavepoint->pNext;
+				assert(pSavepoint==db->pSavepoint);
+				db->pSavepoint = pSavepoint->pNext;
 				sqlite3DbFree(db, pSavepoint);
 				if (!isTransaction) {
-					p->nSavepoint--;
+					db->nSavepoint--;
 				}
 			} else {
-				p->nDeferredCons = pSavepoint->nDeferredCons;
-				p->nDeferredImmCons = pSavepoint->nDeferredImmCons;
+				db->nDeferredCons = pSavepoint->nDeferredCons;
+				db->nDeferredImmCons = pSavepoint->nDeferredImmCons;
 			}
 		}
 	}
@@ -3057,12 +3058,12 @@ case OP_AutoCommit: {
 	assert(db->nVdbeActive>0);  /* At least this one VM is active */
 	assert(p->bIsReader);
 
-	if (desiredAutoCommit!=p->autoCommit) {
+	if (desiredAutoCommit!=db->autoCommit) {
 		if (iRollback) {
 			assert(desiredAutoCommit==1);
 			box_txn_rollback();
 			sqlite3RollbackAll(p, SQLITE_ABORT_ROLLBACK);
-			p->autoCommit = 1;
+			db->autoCommit = 1;
 		} else if (desiredAutoCommit && db->nVdbeWrite>0) {
 			/* If this instruction implements a COMMIT and other VMs are writing
 			 * return an error indicating that the other VMs must complete first.
@@ -3074,15 +3075,15 @@ case OP_AutoCommit: {
 		} else if ((rc = sqlite3VdbeCheckFk(p, 1))!=SQLITE_OK) {
 			goto vdbe_return;
 		} else {
-			p->autoCommit = (u8)desiredAutoCommit;
+			db->autoCommit = (u8)desiredAutoCommit;
 		}
 		if (sqlite3VdbeHalt(p)==SQLITE_BUSY) {
 			p->pc = (int)(pOp - aOp);
-			p->autoCommit = (u8)(1-desiredAutoCommit);
+			db->autoCommit = (u8)(1-desiredAutoCommit);
 			p->rc = rc = SQLITE_BUSY;
 			goto vdbe_return;
 		}
-		assert(p->nStatement==0);
+		assert(db->nStatement==0);
 		sqlite3CloseSavepoints(p);
 		if (p->rc==SQLITE_OK) {
 			rc = SQLITE_DONE;
@@ -3152,7 +3153,7 @@ case OP_Transaction: {
 	pBt = db->mdb.pBt;
 
 	if (pBt) {
-		rc = sqlite3BtreeBeginTrans(pBt, p->nSavepoint, pOp->p2);
+		rc = sqlite3BtreeBeginTrans(pBt, db->nSavepoint, pOp->p2);
 		testcase( rc==SQLITE_BUSY_SNAPSHOT);
 		testcase( rc==SQLITE_BUSY_RECOVERY);
 		if (rc!=SQLITE_OK) {
@@ -3165,22 +3166,22 @@ case OP_Transaction: {
 		}
 
 		if (pOp->p2 && p->usesStmtJournal
-		    && (p->autoCommit==0 || db->nVdbeRead>1)
+		    && (db->autoCommit==0 || db->nVdbeRead>1)
 			) {
 			assert(sqlite3BtreeIsInTrans(pBt));
 			if (p->iStatement==0) {
-				assert(p->nStatement>=0 && p->nSavepoint>=0);
-				p->nStatement++;
-				p->iStatement = p->nSavepoint + p->nStatement;
+				assert(db->nStatement>=0 && db->nSavepoint>=0);
+				db->nStatement++;
+				p->iStatement = db->nSavepoint + db->nStatement;
 			}
-			rc = sqlite3BtreeBeginStmt(pBt, p->iStatement, p->nSavepoint);
+			rc = sqlite3BtreeBeginStmt(pBt, p->iStatement, db->nSavepoint);
 
 			/* Store the current value of the database handles deferred constraint
 			 * counter. If the statement transaction needs to be rolled back,
 			 * the value of this counter needs to be restored too.
 			 */
-			p->nStmtDefCons = p->nDeferredCons;
-			p->nStmtDefImmCons = p->nDeferredImmCons;
+			p->nStmtDefCons = db->nDeferredCons;
+			p->nStmtDefImmCons = db->nDeferredImmCons;
 		}
 
 		/* Gather the schema version number for checking:
@@ -3219,7 +3220,7 @@ case OP_Transaction: {
  * Auto commit mode is disabled by OP_Transaction.
  */
 case OP_TTransaction: {
-	if (p->autoCommit) {
+	if (db->autoCommit) {
 		rc = box_txn_begin() == 0 ? SQLITE_OK : SQLITE_TARANTOOL_ERROR;}
 	break;
 }
@@ -3532,7 +3533,7 @@ case OP_OpenEphemeral: {
 	rc = sqlite3BtreeOpen(db->pVfs, 0, db, &pCx->pBtx,
 			      BTREE_OMIT_JOURNAL | BTREE_SINGLE | pOp->p5, vfsFlags);
 	if (rc==SQLITE_OK) {
-		rc = sqlite3BtreeBeginTrans(pCx->pBtx, p->nSavepoint, 1);
+		rc = sqlite3BtreeBeginTrans(pCx->pBtx, db->nSavepoint, 1);
 	}
 	if (rc==SQLITE_OK) {
 		/* If a transient index is required, create it by calling
@@ -6110,9 +6111,9 @@ case OP_Param: {           /* out2 */
  */
 case OP_FkCounter: {
 	if (user_session->sql_flags & SQLITE_DeferFKs) {
-		p->nDeferredImmCons += pOp->p2;
+		db->nDeferredImmCons += pOp->p2;
 	} else if (pOp->p1) {
-		p->nDeferredCons += pOp->p2;
+		db->nDeferredCons += pOp->p2;
 	} else {
 		p->nFkConstraint += pOp->p2;
 	}
@@ -6133,11 +6134,11 @@ case OP_FkCounter: {
  */
 case OP_FkIfZero: {         /* jump */
 	if (pOp->p1) {
-		VdbeBranchTaken(db->nDeferredCons==0 && p->nDeferredImmCons==0, 2);
-		if (p->nDeferredCons==0 && p->nDeferredImmCons==0) goto jump_to_p2;
+		VdbeBranchTaken(db->nDeferredCons==0 && db->nDeferredImmCons==0, 2);
+		if (db->nDeferredCons==0 && db->nDeferredImmCons==0) goto jump_to_p2;
 	} else {
-		VdbeBranchTaken(p->nFkConstraint==0 && p->nDeferredImmCons==0, 2);
-		if (p->nFkConstraint==0 && p->nDeferredImmCons==0) goto jump_to_p2;
+		VdbeBranchTaken(p->nFkConstraint==0 && db->nDeferredImmCons==0, 2);
+		if (p->nFkConstraint==0 && db->nDeferredImmCons==0) goto jump_to_p2;
 	}
 	break;
 }

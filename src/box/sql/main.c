@@ -1022,14 +1022,15 @@ sqlite3_total_changes(sqlite3 * db)
 void
 sqlite3CloseSavepoints(Vdbe * pVdbe)
 {
-	while (pVdbe->pSavepoint && pVdbe->pSavepoint->pNext) {
-		Savepoint *pTmp = pVdbe->pSavepoint;
-		pVdbe->pSavepoint = pTmp->pNext;
+	sqlite3 * db = pVdbe->db;
+	while (db->pSavepoint && db->pSavepoint->pNext) {
+		Savepoint *pTmp = db->pSavepoint;
+		db->pSavepoint = pTmp->pNext;
 		sqlite3DbFree(pVdbe->db, pTmp);
 	}
-	pVdbe->nSavepoint = 0;
-	pVdbe->nStatement = 0;
-	pVdbe->isTransactionSavepoint = 0;
+	db->nSavepoint = 0;
+	db->nStatement = 0;
+	db->isTransactionSavepoint = 0;
 }
 
 /*
@@ -1176,12 +1177,12 @@ sqlite3RollbackAll(Vdbe * pVdbe, int tripCode)
 	sqlite3BtreeLeaveAll(db);
 
 	/* Any deferred constraint violations have now been resolved. */
-	pVdbe->nDeferredCons = 0;
-	pVdbe->nDeferredImmCons = 0;
+	db->nDeferredCons = 0;
+	db->nDeferredImmCons = 0;
 	user_session->sql_flags &= ~SQLITE_DeferFKs;
 
 	/* If one has been configured, invoke the rollback-hook callback */
-	if (db->xRollbackCallback && (inTrans || !pVdbe->autoCommit)) {
+	if (db->xRollbackCallback && (inTrans || !db->autoCommit)) {
 		db->xRollbackCallback(db->pRollbackArg);
 	}
 }

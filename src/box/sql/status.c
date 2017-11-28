@@ -362,12 +362,7 @@ sqlite3_db_status(sqlite3 * db,	/* The database connection whose status is desir
 	case SQLITE_DBSTATUS_DEFERRED_FKS:{
 			*pHighwater = 0;	/* IMP: R-11967-56545
 			*/
-			Vdbe *v = db->pVdbe;
-			while (v->pNext) {
-				*pCurrent = v->nDeferredImmCons > 0
-				    || v->nDeferredCons > 0;
-				v = v->pNext;
-			}
+			*pCurrent = db->nDeferredImmCons>0 || db->nDeferredCons>0;
 			break;
 		}
 
