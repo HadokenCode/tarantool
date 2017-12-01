@@ -3164,7 +3164,6 @@ case OP_Transaction: {
 			}
 			goto abort_due_to_error;
 		}
-
 		if (pOp->p2 && p->usesStmtJournal
 		    && (db->autoCommit==0 || db->nVdbeRead>1)
 			) {
@@ -3222,6 +3221,13 @@ case OP_Transaction: {
 case OP_TTransaction: {
 	if (db->autoCommit) {
 		rc = box_txn_begin() == 0 ? SQLITE_OK : SQLITE_TARANTOOL_ERROR;}
+	if (box_txn()
+	    && db->autoCommit==0
+	    && p->pParse->mayAbort){
+		p->statement_savepoint = box_txn_savepoint();
+		p->nStmtDefCons = db->nDeferredCons;
+		p->nStmtDefImmCons = db->nDeferredImmCons;
+	}
 	break;
 }
 
