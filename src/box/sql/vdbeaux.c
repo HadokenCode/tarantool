@@ -2680,6 +2680,8 @@ sqlite3VdbeCloseStatement(Vdbe * p, int eOp)
 				    sqlite3BtreeSavepoint(pBt,
 							  SAVEPOINT_ROLLBACK,
 							  iSavepoint);
+				box_txn_rollback_to_savepoint(p->statement_savepoint);
+				p->statement_savepoint = NULL;
 			}
 			if (rc2 == SQLITE_OK) {
 				rc2 =
@@ -2807,7 +2809,7 @@ sqlite3VdbeHalt(Vdbe * p)
 			 */
 			if (!p->readOnly || mrc != SQLITE_INTERRUPT) {
 				if ((mrc == SQLITE_NOMEM || mrc == SQLITE_FULL)
-				    && p->usesStmtJournal) {
+				    && db->autoCommit==0) {
 					eStatementOp = SAVEPOINT_ROLLBACK;
 				} else {
 					/* We are forced to roll back the active transaction. Before doing

@@ -381,6 +381,7 @@ struct Vdbe {
 	i64 nStmtDefCons;	/* Number of def. constraints when stmt started */
 	i64 nStmtDefImmCons;	/* Number of def. imm constraints when stmt started */
 
+	struct txn_savepoint * statement_savepoint;
 
 	/* When allocating a new Vdbe object, all of the fields below should be
 	 * initialized to zero or NULL
