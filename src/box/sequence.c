@@ -247,15 +247,27 @@ access_check_sequence(struct sequence *seq)
 	 * No special check for ADMIN user is necessary since ADMIN has
 	 * universal access.
 	 */
-	uint8_t access = PRIV_W & ~cr->universal_access;
+
+	uint8_t access = PRIV_U | PRIV_W;
+	uint8_t masked_access = access ^ (access & cr->universal_access);
+	printf("%i\n", masked_access);
 	if (seq->def->uid != cr->uid &&
-	     access & ~seq->access[cr->auth_token].effective) {
+	    masked_access & ~seq->access[cr->auth_token].effective) {
 		/* Access violation, report error. */
 		struct user *user = user_find(cr->uid);
-		if (user != NULL)
-			diag_set(ClientError, ER_SEQUENCE_ACCESS_DENIED,
-				 priv_name(access), user->def->name,
-				 seq->def->name);
+		if (user != NULL) {
+			if (!(cr->universal_access & PRIV_U)) {
+				diag_set(ClientError, ER_ACCESS_DENIED,
+					 priv_name(PRIV_U),
+					 schema_object_name(SC_UNIVERSE),
+					 user->def->name);
+			} else {
+				diag_set(ClientError,
+					 ER_SEQUENCE_ACCESS_DENIED,
+					 priv_name(access), user->def->name,
+					 seq->def->name);
+			}
+		}
 		return -1;
 	}
 	return 0;

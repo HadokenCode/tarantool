@@ -64,8 +64,17 @@ enum {
 	PRIV_W = 2,
 	/* CALL */
 	PRIV_X = 4,
-	/** Everything. */
-	PRIV_ALL = PRIV_R + PRIV_W + PRIV_X
+	/** Everything, except system privileges. */
+	PRIV_RWX = PRIV_R + PRIV_W + PRIV_X,
+	/* System privileges */
+	/* CONNECT */
+	PRIV_S = 8,
+	/* USAGE */
+	PRIV_U = 16,
+	/* All system privileges*/
+	PRIV_SYS = PRIV_S + PRIV_U,
+	/* Everything */
+	PRIV_ALL = PRIV_RWX + PRIV_S + PRIV_U,
 };
 
 /**

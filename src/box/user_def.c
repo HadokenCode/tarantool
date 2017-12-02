@@ -36,6 +36,10 @@ priv_name(uint8_t access)
 		return "Read";
 	if (access & PRIV_W)
 		return "Write";
-	return "Execute";
+	if (access & PRIV_X)
+		return "Execute";
+	if (access & PRIV_S)
+		return "Session";
+	return "Usage";
 }
 

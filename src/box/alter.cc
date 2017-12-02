@@ -60,7 +60,7 @@
 
 /* {{{ Auxiliary functions and methods. */
 
-void
+static void
 access_check_ddl(uint32_t owner_uid, enum schema_object_type type)
 {
 	struct credentials *cr = current_user();
@@ -72,11 +72,20 @@ access_check_ddl(uint32_t owner_uid, enum schema_object_type type)
 	 * since Tarantool lacks separate CREATE/DROP/GRANT OPTION
 	 * privileges.
 	 */
-	if (owner_uid != cr->uid && cr->uid != ADMIN) {
+	int access = PRIV_U & ~cr->universal_access;
+	if (access || (owner_uid != cr->uid && cr->uid != ADMIN)) {
 		struct user *user = user_find_xc(cr->uid);
-		tnt_raise(ClientError, ER_ACCESS_DENIED,
-			  "Create, drop or alter", schema_object_name(type),
-			  user->def->name);
+		if (access) {
+			tnt_raise(ClientError, ER_ACCESS_DENIED,
+				  priv_name(PRIV_U),
+				  schema_object_name(SC_UNIVERSE),
+				  user->def->name);
+		} else {
+			tnt_raise(ClientError, ER_ACCESS_DENIED,
+				  "Create, drop or alter",
+				  schema_object_name(type),
+				  user->def->name);
+		}
 	}
 }
 
@@ -2451,6 +2460,16 @@ on_replace_dd_priv(struct trigger * /* trigger */, void *event)
 
 	if (new_tuple != NULL && old_tuple == NULL) {	/* grant */
 		priv_def_create_from_tuple(&priv, new_tuple);
+		/*
+		 * To the user-objects from old versions we have to add
+		 * system privileges explicitly because upgrade script may not
+		 * be invoked
+		 */
+		if (priv.object_type == SC_UNIVERSE &&
+			dd_version_id < version_id(1, 7, 7)) {
+			priv.access |= PRIV_S;
+			priv.access |= PRIV_U;
+		}
 		priv_def_check(&priv);
 		grant_or_revoke(&priv);
 		struct trigger *on_rollback =

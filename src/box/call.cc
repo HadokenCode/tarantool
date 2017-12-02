@@ -65,20 +65,30 @@ access_check_func(const char *name, uint32_t name_len, struct func **funcp)
 	 * No special check for ADMIN user is necessary
 	 * since ADMIN has universal access.
 	 */
-	if ((credentials->universal_access & PRIV_ALL) == PRIV_ALL) {
+	if ((credentials->universal_access & (PRIV_RWX | PRIV_U)) ==
+	    (PRIV_RWX | PRIV_U)) {
 		*funcp = func;
 		return 0;
 	}
-
-	uint8_t access = PRIV_X & ~credentials->universal_access;
+	uint8_t access = PRIV_X | PRIV_U;
+	uint8_t masked_access = access ^ (access & credentials->universal_access);
 	if (func == NULL || (func->def->uid != credentials->uid &&
-	     access & ~func->access[credentials->auth_token].effective)) {
+	    masked_access & ~func->access[credentials->auth_token].effective)) {
 		/* Access violation, report error. */
 		struct user *user = user_find(credentials->uid);
-		if (user != NULL)
-			diag_set(ClientError, ER_FUNCTION_ACCESS_DENIED,
-				 priv_name(access), user->def->name,
-				 tt_cstr(name, name_len));
+		if (user != NULL) {
+			if (!(access & credentials->universal_access)) {
+				diag_set(ClientError, ER_ACCESS_DENIED,
+					 priv_name(PRIV_U),
+					 schema_object_name(SC_UNIVERSE),
+					 user->def->name);
+			} else {
+				diag_set(ClientError,
+					 ER_FUNCTION_ACCESS_DENIED,
+					 priv_name(PRIV_X), user->def->name,
+					 tt_cstr(name, name_len));
+			}
+		}
 		return -1;
 	}
 

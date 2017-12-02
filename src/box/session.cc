@@ -232,3 +232,47 @@ session_free()
 	if (session_registry)
 		mh_i64ptr_delete(session_registry);
 }
+
+int
+access_check_session(struct user *user)
+{
+	/*
+	 * Can't use here access_check_universe
+	 * as current_user is not assigned yet
+	 */
+	if (!(universe.access[user->auth_token].effective & PRIV_S)) {
+		diag_set(ClientError, ER_ACCESS_DENIED, priv_name(PRIV_S),
+			 schema_object_name(SC_UNIVERSE),
+			 user->def->name);
+		return -1;
+	}
+	return 0;
+}
+
+void
+access_check_session_xc(struct user *user)
+{
+	if (access_check_session(user) < 0) {
+		diag_raise();
+	}
+}
+
+void
+access_check_universe(uint8_t access)
+{
+	struct credentials *credentials = current_user();
+	access |= PRIV_U;
+	if ((credentials->universal_access & access) ^ access) {
+		/*
+		 * Access violation, report error.
+		 * The user may not exist already, if deleted
+		 * from a different connection.
+		 */
+		struct user *user = user_find_xc(credentials->uid);
+		int denied_access = access & ((credentials->universal_access
+					       & access) ^ access);
+		tnt_raise(ClientError, ER_ACCESS_DENIED,
+			 priv_name(denied_access),
+			 schema_object_name(SC_UNIVERSE), user->def->name);
+	}
+}

@@ -59,6 +59,7 @@ box.schema.func.drop('dummy')
 box.space['_user']:delete{uid}
 box.schema.user.revoke('rich', 'read,write', 'universe')
 box.schema.user.revoke('rich', 'public')
+box.schema.user.disable("rich")
 box.space['_user']:delete{uid}
 box.schema.user.drop('test')
 
@@ -258,8 +259,10 @@ box.schema.user.grant('guest', 'read,write,execute', 'universe')
 box.schema.user.grant('guest', 'read,write,execute', 'universe')
 box.schema.user.grant('guest', 'read,write,execute', 'universe', '', { if_not_exists = true })
 box.schema.user.revoke('guest', 'read,write,execute', 'universe')
+box.schema.user.revoke('guest', 'usage,session', 'universe')
 box.schema.user.revoke('guest', 'read,write,execute', 'universe')
 box.schema.user.revoke('guest', 'read,write,execute', 'universe', '', { if_exists = true })
+box.schema.user.grant('guest', 'usage,session', 'universe')
 box.schema.func.create('dummy', { if_not_exists = true })
 box.schema.func.create('dummy', { if_not_exists = true })
 box.schema.func.drop('dummy')
@@ -347,3 +350,40 @@ box.schema.role.info('test_role')
 
 box.schema.user.drop('test_user')
 box.schema.role.drop('test_role')
+-- System privileges
+s = box.schema.create_space("tweed")
+_ = s:create_index('primary', {type = 'hash', parts = {1, 'unsigned'}})
+
+box.schema.user.create('test', {password="pass"})
+box.schema.user.grant('test', 'read,write', 'universe')
+
+-- other users can't disable
+box.schema.user.create('test1')
+session.su("test1")
+box.schema.user.disable("test")
+
+session.su("admin")
+box.schema.user.disable("test")
+session.su("test")
+c = (require 'net.box').connect(LISTEN.host, LISTEN.service, {user="test", password="pass"})
+c.state
+c.error
+
+session.su("test1")
+box.schema.user.grant("test", "usage", "universe")
+session.su('admin')
+box.schema.user.grant("test", "session", "universe")
+session.su("test")
+s:select{}
+
+session.su('admin')
+box.schema.user.enable("test")
+-- check enable not fails on double enabling
+box.schema.user.enable("test")
+session.su("test")
+s:select{}
+
+session.su("admin")
+box.schema.user.drop('test')
+box.schema.user.drop('test1')
+s:drop()

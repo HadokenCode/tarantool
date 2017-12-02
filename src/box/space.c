@@ -51,9 +51,11 @@ access_check_space(struct space *space, uint8_t access)
 	 * No special check for ADMIN user is necessary
 	 * since ADMIN has universal access.
 	 */
-	access &= ~cr->universal_access;
-	if (access && space->def->uid != cr->uid &&
-	    access & ~space->access[cr->auth_token].effective) {
+	access |= PRIV_U;
+	uint8_t masked_access = access ^ (access & cr->universal_access);
+
+	if (masked_access && space->def->uid != cr->uid &&
+	    masked_access & ~space->access[cr->auth_token].effective) {
 		/*
 		 * Report access violation. Throw "no such user"
 		 * error if there is  no user with this id.
@@ -61,10 +63,19 @@ access_check_space(struct space *space, uint8_t access)
 		 * from a different connection.
 		 */
 		struct user *user = user_find(cr->uid);
-		if (user != NULL)
-			diag_set(ClientError, ER_SPACE_ACCESS_DENIED,
-				 priv_name(access), user->def->name,
-				 space->def->name);
+		if (user != NULL) {
+			if (!(cr->universal_access & PRIV_U)) {
+				diag_set(ClientError, ER_ACCESS_DENIED,
+					 priv_name(PRIV_U),
+					 schema_object_name(SC_UNIVERSE),
+					 user->def->name);
+			} else {
+				diag_set(ClientError,
+					 ER_SPACE_ACCESS_DENIED,
+					 priv_name(access), user->def->name,
+					 space->def->name);
+			}
+		}
 		return -1;
 	}
 	return 0;
