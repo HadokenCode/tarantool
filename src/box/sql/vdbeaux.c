@@ -68,9 +68,12 @@ sqlite3VdbeCreate(Parse * pParse)
 	p->pParse = pParse;
 	db->autoCommit = (char)box_txn() == 0 ? 1 : 0;
 	db->isTransactionSavepoint = 0;
+	if (!db->autoCommit){
+		p->psql_txn=in_txn()->psql_txn;
+	}else{
+		p->psql_txn = NULL;
+	}
 	db->nStatement = 0;
-	db->nSavepoint = 0;
-	db->pSavepoint = 0;
 	db->nDeferredCons = 0;
 	db->nDeferredImmCons = 0;
 
@@ -2659,7 +2662,7 @@ sqlite3VdbeCloseStatement(Vdbe * p, int eOp)
 {
 	sqlite3 *const db = p->db;
 	int rc = SQLITE_OK;
-
+	struct sql_txn * psql_txn = p->psql_txn;
 	/* If p->iStatement is greater than zero, then this Vdbe opened a
 	 * statement transaction that should be closed here. The only exception
 	 * is that an IO error may have occurred, causing an emergency rollback.
@@ -2670,7 +2673,7 @@ sqlite3VdbeCloseStatement(Vdbe * p, int eOp)
 
 		assert(eOp == SAVEPOINT_ROLLBACK || eOp == SAVEPOINT_RELEASE);
 		assert(db->nStatement > 0);
-		assert(p->iStatement == (db->nStatement + db->nSavepoint));
+		assert(p->iStatement == (db->nStatement + psql_txn->nSavepoint));
 
 		int rc2 = SQLITE_OK;
 		Btree *pBt = db->mdb.pBt;
@@ -2722,7 +2725,8 @@ sqlite3VdbeCloseStatement(Vdbe * p, int eOp)
 int
 sqlite3VdbeCheckFk(Vdbe * p, int deferred)
 {
-	if ((deferred && (p->db->nDeferredCons + p->db->nDeferredImmCons) > 0)
+	sqlite3 * db = p->db;
+	if ((deferred && (db->nDeferredCons + db->nDeferredImmCons) > 0)
 	    || (!deferred && p->nFkConstraint > 0)
 	    ) {
 		p->rc = SQLITE_CONSTRAINT_FOREIGNKEY;
@@ -2733,6 +2737,28 @@ sqlite3VdbeCheckFk(Vdbe * p, int deferred)
 	return SQLITE_OK;
 }
 #endif
+
+int
+sql_txn_begin(Vdbe *p) {
+	struct txn * ptxn;
+	if (in_txn()) {
+		diag_set(ClientError, ER_ACTIVE_TRANSACTION);
+		return -1;
+	}
+
+	if ( (ptxn = txn_begin(false)) == NULL)
+		return -1;
+	ptxn->psql_txn = region_alloc_object(&fiber()->gc, struct sql_txn);
+	if (ptxn->psql_txn==NULL) {
+		box_txn_rollback();
+		return -1;
+	}
+	memset(ptxn->psql_txn, 0, sizeof(struct sql_txn));
+	p->psql_txn = ptxn->psql_txn;
+	return 0;
+}
+
+
 
 /*
  * This routine is called the when a VDBE tries to halt.  If the VDBE

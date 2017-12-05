@@ -45,6 +45,7 @@
 #include "btreeInt.h"
 #include "vdbeInt.h"
 #include "tarantoolInt.h"
+#include "box/sql.h"
 
 #include "msgpuck/msgpuck.h"
 
@@ -569,8 +570,9 @@ checkSavepointCount(Vdbe *v)
 	int n = 0;
 	sqlite3* db = v->db;
 	Savepoint *p;
-	for(p=db->pSavepoint; p; p=p->pNext) n++;
-	assert(n==(db->nSavepoint + db->isTransactionSavepoint));
+	struct sql_txn * psql_txn = v->psql_txn;
+	for(p=psql_txn->pSavepoint; p; p=p->pNext) n++;
+	assert(n==(psql_txn->nSavepoint + db->isTransactionSavepoint));
 	return 1;
 }
 #endif
@@ -2831,16 +2833,17 @@ case OP_Savepoint: {
 	Savepoint *pSavepoint;
 	Savepoint *pTmp;
 	int iSavepoint;
-
+	struct sql_txn *psql_txn = (struct sql_txn *)p->psql_txn;
+	assert(psql_txn);
 	p1 = pOp->p1;
 	zName = pOp->p4.z;
 
 	/* Assert that the p1 parameter is valid. Also that if there is no open
 	 * transaction, then there cannot be any savepoints.
 	 */
-	assert(db->pSavepoint==0 || db->autoCommit==0);
+	assert(psql_txn->pSavepoint==0 || db->autoCommit==0);
 	assert(p1==SAVEPOINT_BEGIN||p1==SAVEPOINT_RELEASE||p1==SAVEPOINT_ROLLBACK);
-	assert(db->pSavepoint || db->isTransactionSavepoint==0);
+	assert(psql_txn->pSavepoint || db->isTransactionSavepoint==0);
 	assert(checkSavepointCount(p));
 	assert(p->bIsReader);
 
@@ -2855,10 +2858,13 @@ case OP_Savepoint: {
 			nName = sqlite3Strlen30(zName);
 
 			/* Create a new savepoint structure. */
-			pNew = sqlite3DbMallocRawNN(db, sizeof(Savepoint)+nName+1);
+			pNew = (Savepoint *)region_aligned_alloc(&fiber()->gc,
+							sizeof(Savepoint) + nName + 1,
+							alignof(Savepoint));
 			if (pNew) {
 				pNew->zName = (char *)&pNew[1];
 				memcpy(pNew->zName, zName, nName+1);
+				pNew->tnt_savepoint = box_txn_savepoint();
 
 				/* If there is no open transaction, then mark this as a special
 				 * "transaction savepoint".
@@ -2867,12 +2873,12 @@ case OP_Savepoint: {
 					db->autoCommit = 0;
 					db->isTransactionSavepoint = 1;
 				} else {
-					db->nSavepoint++;
+					psql_txn->nSavepoint++;
 				}
 
 				/* Link the new savepoint into the database handle's list. */
-				pNew->pNext = db->pSavepoint;
-				db->pSavepoint = pNew;
+				pNew->pNext = psql_txn->pSavepoint;
+				psql_txn->pSavepoint = pNew;
 				pNew->nDeferredCons = db->nDeferredCons;
 				pNew->nDeferredImmCons = db->nDeferredImmCons;
 			}
@@ -2884,7 +2890,7 @@ case OP_Savepoint: {
 		 * an error is returned to the user.
 		 */
 		for(
-			pSavepoint = db->pSavepoint;
+			pSavepoint = psql_txn->pSavepoint;
 			pSavepoint && sqlite3StrICmp(pSavepoint->zName, zName);
 			pSavepoint = pSavepoint->pNext
 			) {
@@ -2922,9 +2928,10 @@ case OP_Savepoint: {
 				rc = p->rc;
 			} else {
 				int isSchemaChange;
-				iSavepoint = db->nSavepoint - iSavepoint - 1;
+				iSavepoint = psql_txn->nSavepoint - iSavepoint - 1;
 				if (p1==SAVEPOINT_ROLLBACK) {
 					isSchemaChange = (user_session->sql_flags & SQLITE_InternChanges)!=0;
+					box_txn_rollback_to_savepoint(pSavepoint->tnt_savepoint);
 					rc = sqlite3BtreeTripAllCursors(db->mdb.pBt,
 									SQLITE_ABORT_ROLLBACK,
 									isSchemaChange==0);
@@ -2946,11 +2953,14 @@ case OP_Savepoint: {
 			/* Regardless of whether this is a RELEASE or ROLLBACK, destroy all
 			 * savepoints nested inside of the savepoint being operated on.
 			 */
-			while( db->pSavepoint!=pSavepoint) {
-				pTmp = db->pSavepoint;
-				db->pSavepoint = pTmp->pNext;
-				sqlite3DbFree(db, pTmp);
-				db->nSavepoint--;
+			while( psql_txn->pSavepoint!=pSavepoint) {
+				pTmp = psql_txn->pSavepoint;
+				psql_txn->pSavepoint = pTmp->pNext;
+				/*
+				 * Since savepoints are stored in region, we do not
+				 * have to destroy them
+				 */
+				psql_txn->nSavepoint--;
 			}
 
 			/* If it is a RELEASE, then destroy the savepoint being operated on
@@ -2959,11 +2969,10 @@ case OP_Savepoint: {
 			 * when the savepoint was created.
 			 */
 			if (p1==SAVEPOINT_RELEASE) {
-				assert(pSavepoint==db->pSavepoint);
-				db->pSavepoint = pSavepoint->pNext;
-				sqlite3DbFree(db, pSavepoint);
+				assert(pSavepoint==psql_txn->pSavepoint);
+				psql_txn->pSavepoint = pSavepoint->pNext;
 				if (!isTransaction) {
-					db->nSavepoint--;
+					psql_txn->nSavepoint--;
 				}
 			} else {
 				db->nDeferredCons = pSavepoint->nDeferredCons;
@@ -3044,6 +3053,9 @@ case OP_AutoCommit: {
 			goto vdbe_return;
 		} else {
 			db->autoCommit = (u8)desiredAutoCommit;
+			if (db->autoCommit==0){
+				sql_txn_begin(p);
+			}
 		}
 		if (sqlite3VdbeHalt(p)==SQLITE_BUSY) {
 			p->pc = (int)(pOp - aOp);
@@ -3109,6 +3121,7 @@ case OP_Transaction: {
 	Btree *pBt;
 	int iMeta;
 	int iGen;
+	struct sql_txn * psql_txn = p->psql_txn;
 
 	assert(p->bIsReader);
 	assert(p->readOnly==0 || pOp->p2==0);
@@ -3121,7 +3134,7 @@ case OP_Transaction: {
 	pBt = db->mdb.pBt;
 
 	if (pBt) {
-		rc = sqlite3BtreeBeginTrans(pBt, db->nSavepoint, pOp->p2);
+		rc = sqlite3BtreeBeginTrans(pBt, 0, pOp->p2);
 		testcase( rc==SQLITE_BUSY_SNAPSHOT);
 		testcase( rc==SQLITE_BUSY_RECOVERY);
 		if (rc!=SQLITE_OK) {
@@ -3137,11 +3150,11 @@ case OP_Transaction: {
 			) {
 			assert(sqlite3BtreeIsInTrans(pBt));
 			if (p->iStatement==0) {
-				assert(db->nStatement>=0 && db->nSavepoint>=0);
+				assert(db->nStatement>=0 && psql_txn->nSavepoint>=0);
 				db->nStatement++;
-				p->iStatement = db->nSavepoint + db->nStatement;
+				p->iStatement = psql_txn->nSavepoint + db->nStatement;
 			}
-			rc = sqlite3BtreeBeginStmt(pBt, p->iStatement, db->nSavepoint);
+			rc = sqlite3BtreeBeginStmt(pBt, p->iStatement, psql_txn->nSavepoint);
 
 			/* Store the current value of the database handles deferred constraint
 			 * counter. If the statement transaction needs to be rolled back,
@@ -3503,7 +3516,7 @@ case OP_OpenEphemeral: {
 	rc = sqlite3BtreeOpen(db->pVfs, 0, db, &pCx->pBtx,
 			      BTREE_OMIT_JOURNAL | BTREE_SINGLE | pOp->p5, vfsFlags);
 	if (rc==SQLITE_OK) {
-		rc = sqlite3BtreeBeginTrans(pCx->pBtx, db->nSavepoint, 1);
+		rc = sqlite3BtreeBeginTrans(pCx->pBtx, 0, 1);
 	}
 	if (rc==SQLITE_OK) {
 		/* If a transient index is required, create it by calling

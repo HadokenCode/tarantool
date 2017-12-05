@@ -125,6 +125,7 @@ struct txn {
 	struct trigger fiber_on_yield, fiber_on_stop;
 	 /** Commit and rollback triggers */
 	struct rlist on_commit, on_rollback;
+	void *psql_txn;
 };
 
 /* Pointer to the current transaction (if any) */

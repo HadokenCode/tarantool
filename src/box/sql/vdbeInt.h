@@ -356,6 +356,12 @@ struct ScanStatus {
 	char *zName;		/* Name of table or index */
 };
 
+
+struct sql_txn{
+	Savepoint *pSavepoint;	/* List of active savepoints */
+	int nSavepoint;		/* Number of non-transaction savepoints */
+};
+
 /*
  * An instance of the virtual machine.  This structure contains the complete
  * state of the virtual machine.
@@ -382,6 +388,7 @@ struct Vdbe {
 	i64 nStmtDefImmCons;	/* Number of def. imm constraints when stmt started */
 
 	struct txn_savepoint * statement_savepoint;
+	struct sql_txn* psql_txn;	/* Data related to current transaction */
 
 	/* When allocating a new Vdbe object, all of the fields below should be
 	 * initialized to zero or NULL
@@ -484,6 +491,8 @@ int sqlite3VdbeIdxKeyCompare(sqlite3 *, VdbeCursor *, UnpackedRecord *, int *);
 int sqlite3VdbeIdxRowid(sqlite3 *, BtCursor *, i64 *);
 int sqlite3VdbeExec(Vdbe *);
 int sqlite3VdbeList(Vdbe *);
+int
+sql_txn_begin(Vdbe *);
 int sqlite3VdbeHalt(Vdbe *);
 int sqlite3VdbeMemTooBig(Mem *);
 int sqlite3VdbeMemCopy(Mem *, const Mem *);
