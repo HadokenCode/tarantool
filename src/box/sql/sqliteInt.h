@@ -65,6 +65,7 @@
 
 #include <stdbool.h>
 #include <trivia/util.h>
+#include "box/txn.h"
 
 /*
  * Make sure the Tcl calling convention macro is defined.  This macro is
@@ -1147,8 +1148,6 @@ struct sqlite3 {
 
 	u8 autoCommit;		/* The auto-commit flag. */
 	u8 isTransactionSavepoint;	/* True if the outermost savepoint is a TS */
-	Savepoint *pSavepoint;	/* List of active savepoints */
-	int nSavepoint;		/* Number of non-transaction savepoints */
 	int nStatement;		/* Number of nested statement-transactions  */
 	i64 nDeferredCons;	/* Net deferred constraints this transaction. */
 	i64 nDeferredImmCons;	/* Net deferred immediate constraints */
@@ -1450,6 +1449,7 @@ struct FuncDestructor {
  * OP_Savepoint instruction.
  */
 struct Savepoint {
+	box_txn_savepoint_t * tnt_savepoint; /* Tarantool's savepoint struct */
 	char *zName;		/* Savepoint name (nul-terminated) */
 	i64 nDeferredCons;	/* Number of deferred fk violations */
 	i64 nDeferredImmCons;	/* Number of deferred imm fk. */

@@ -4130,7 +4130,6 @@ sqlite3BeginTransaction(Parse * pParse, MAYBE_UNUSED int type)
 	v = sqlite3GetVdbe(pParse);
 	if (!v)
 		return;
-	sqlite3VdbeAddOp0(v, OP_TTransaction);
 	sqlite3VdbeAddOp0(v, OP_AutoCommit);
 }
 

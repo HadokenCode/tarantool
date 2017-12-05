@@ -1015,20 +1015,19 @@ sqlite3_total_changes(sqlite3 * db)
 }
 
 /*
- * Close all open savepoints. This function only manipulates fields of the
- * database handle object, it does not close any savepoints that may be open
- * at the b-tree/pager level.
+ * Close all open savepoints.
+ * This procedure is trivial as savepoints are allocated on the "region" and
+ * would be destroyed automatically.
  */
 void
 sqlite3CloseSavepoints(Vdbe * pVdbe)
 {
 	sqlite3 * db = pVdbe->db;
-	while (db->pSavepoint && db->pSavepoint->pNext) {
-		Savepoint *pTmp = db->pSavepoint;
-		db->pSavepoint = pTmp->pNext;
-		sqlite3DbFree(pVdbe->db, pTmp);
-	}
-	db->nSavepoint = 0;
+	struct sql_txn* psql_txn = pVdbe->psql_txn;
+	/* If this instruction implements a COMMIT and other VMs are writing
+	 * return an error indicating that the other VMs must complete first.
+	 */
+	psql_txn->nSavepoint = 0;
 	db->nStatement = 0;
 	db->isTransactionSavepoint = 0;
 }
