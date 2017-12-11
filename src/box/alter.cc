@@ -365,6 +365,7 @@ field_def_decode(struct field_def *field, const char **data,
 		 const char *space_name, uint32_t name_len,
 		 uint32_t errcode, uint32_t fieldno, struct region *region)
 {
+	size_t fname_len;
 	if (mp_typeof(**data) != MP_MAP) {
 		tnt_raise(ClientError, errcode, tt_cstr(space_name, name_len),
 			  tt_sprintf("field %d is not map",
@@ -393,11 +394,13 @@ field_def_decode(struct field_def *field, const char **data,
 			  tt_sprintf("field %d name is not specified",
 				     fieldno + TUPLE_INDEX_BASE));
 	}
-	if (strlen(field->name) > BOX_NAME_MAX) {
+	fname_len = strlen(field->name);
+	if (fname_len > BOX_NAME_MAX) {
 		tnt_raise(ClientError, errcode, tt_cstr(space_name, name_len),
 			  tt_sprintf("field %d name is too long",
 				     fieldno + TUPLE_INDEX_BASE));
 	}
+	identifier_check_xc(field->name, (uint32_t) fname_len);
 	if (field->type == field_type_MAX) {
 		tnt_raise(ClientError, errcode, tt_cstr(space_name, name_len),
 			  tt_sprintf("field %d has unknown field type",

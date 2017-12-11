@@ -640,4 +640,14 @@ identifier_testcases.run_identifier_tests(
     box.schema.space.create,
     function (identifier) box.space[identifier]:drop() end
 );
+
+--[[
+-- gh-2914: check column name validation.
+--
+-- Ensure that col names are validated as identifiers.
+--]]
+identifier_testcases.run_identifier_tests(
+    function (identifier) box.schema.create_space('test', { format = {identifier}}) end,
+    function (identifier) box.space['test']:drop() end
+);
 test_run:cmd("setopt delimiter ''");

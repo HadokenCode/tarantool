@@ -1678,6 +1678,18 @@ identifier_testcases.run_identifier_tests(
 ---
 - All tests passed
 ...
+--[[
+-- gh-2914: check column name validation.
+--
+-- Ensure that col names are validated as identifiers.
+--]]
+identifier_testcases.run_identifier_tests(
+    function (identifier) box.schema.create_space('test', { format = {identifier}}) end,
+    function (identifier) box.space['test']:drop() end
+);
+---
+- All tests passed
+...
 test_run:cmd("setopt delimiter ''");
 ---
 - true
