@@ -39,6 +39,7 @@
 #include "xrow.h"
 #include "iproto_constants.h"
 #include "sequence.h"
+#include "schema.h"
 
 int
 access_check_space(struct space *space, uint8_t access)
@@ -65,13 +66,12 @@ access_check_space(struct space *space, uint8_t access)
 		struct user *user = user_find(cr->uid);
 		if (user != NULL) {
 			if (!(cr->universal_access & PRIV_U)) {
-				diag_set(ClientError, ER_ACCESS_DENIED,
+				diag_set(AccessDeniedError,
 					 priv_name(PRIV_U),
 					 schema_object_name(SC_UNIVERSE), "",
 					 user->def->name);
 			} else {
-				diag_set(ClientError,
-					 ER_ACCESS_DENIED,
+				diag_set(AccessDeniedError,
 					 priv_name(access),
 					 schema_object_name(SC_SPACE),
 					 space->def->name, user->def->name);

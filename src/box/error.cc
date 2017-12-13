@@ -165,3 +165,56 @@ BuildXlogError(const char *file, unsigned line, const char *format, ...)
 	}
 }
 
+#include "schema.h"
+#include "trigger.h"
+
+struct rlist on_access_denied = RLIST_HEAD_INITIALIZER(on_access_denied);
+
+static void
+run_triggers(va_list ap) {
+	const char *access_type = va_arg(ap, const char *);
+	const char *obj_type = va_arg(ap, const char *);
+	const char *obj_name = va_arg(ap, const char *);
+	va_arg(ap, const char *);
+	struct access_denied_params res = {obj_type, obj_name, access_type};
+	trigger_run(&on_access_denied, (void *) &res);
+}
+
+AccessDeniedError::AccessDeniedError(const char *file, unsigned int line, ...)
+	: ClientError(file, line, ER_UNKNOWN) {
+	m_errcode = ER_ACCESS_DENIED;
+	va_list ap;
+	va_start(ap, line);
+	/**
+	 * This special if-case
+	 * is needed for uniform handling of error parameters
+	 * Error type ER_ACCESS_DENIED for AccessDeniedError
+	 * has four parameters includingobject_name as a first one
+	 * ClientError for this error type has three parameters,
+	 * so we have to skip the first one to format error message properly.
+	 */
+	error_vformat_msg(this, tnt_errcode_desc(m_errcode), ap);
+	va_end(ap);
+	va_start(ap, line);
+	run_triggers(ap);
+	va_end(ap);
+}
+
+struct error *
+BuildAccessDeniedError(const char *file, unsigned int line, ...)
+{
+	try {
+		ClientError *e = new ClientError(file, line, ER_UNKNOWN);
+		e->m_errcode = ER_ACCESS_DENIED;
+		va_list ap;
+		va_start(ap, line);
+		error_vformat_msg(e, tnt_errcode_desc(e->m_errcode), ap);
+		va_end(ap);
+		va_start(ap, line);
+		run_triggers(ap);
+		va_end(ap);
+		return e;
+	} catch (OutOfMemory *e) {
+		return e;
+	}
+}
