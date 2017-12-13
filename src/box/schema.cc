@@ -36,6 +36,7 @@
 #include "alter.h"
 #include "scoped_guard.h"
 #include "version.h"
+#include "user.h"
 #include <stdio.h>
 /**
  * @module Data Dictionary
@@ -517,4 +518,55 @@ sequence_cache_delete(uint32_t id)
 		TRASH(seq);
 		free(seq);
 	}
+}
+
+const char *
+find_name_by_object_id(uint32_t object_id, enum schema_object_type type)
+{
+	const char *name = NULL;
+	switch (type) {
+		case SC_UNIVERSE:
+			name = "";
+			break;
+		case SC_SPACE:
+		{
+			struct space *space = space_by_id(object_id);
+			if (space == NULL) {
+				return NULL;
+			}
+			name = space->def->name;
+			break;
+		}
+		case SC_FUNCTION:
+		{
+			struct func *func = func_by_id(object_id);
+			if (func == NULL) {
+				return NULL;
+			}
+			name = func->def->name;
+			break;
+		}
+		case SC_SEQUENCE:
+		{
+			struct sequence *seq = sequence_by_id(object_id);
+			if (seq == NULL) {
+				return NULL;
+			}
+			name = seq->def->name;
+			break;
+		}
+		case SC_ROLE:
+		case SC_USER:
+		{
+			struct user *role = user_by_id(object_id);
+			if (role == NULL) {
+				return NULL;
+			}
+			name = role->def->name;
+			break;
+		}
+		default:
+			return NULL;
+	}
+	return name;
 }

@@ -58,10 +58,35 @@
  */
 #define CHAP_SHA1_EMPTY_PASSWORD "vhvewKp0tNyweZQ+cFKAlsyphfg="
 
+enum access_op_code {
+	ACCESS_DROP,
+	ACCESS_ALTER,
+	ACCESS_CREATE,
+	ACCESS_GRANT,
+	ACCESS_REVOKE,
+};
+
+static const char *access_ops_strs[] = {
+	[ACCESS_DROP] = "Drop",
+	[ACCESS_ALTER] = "Alter",
+	[ACCESS_CREATE] = "Create",
+	[ACCESS_GRANT] = "Grant",
+	[ACCESS_REVOKE] = "Revoke",
+};
+
+
+static inline const char *
+access_op_to_str(enum access_op_code op_code)
+{
+	return access_ops_strs[op_code];
+}
+
 /* {{{ Auxiliary functions and methods. */
 
 static void
-access_check_ddl(uint32_t owner_uid, enum schema_object_type type)
+access_check_ddl(const char *name, uint32_t owner_uid,
+		 enum schema_object_type type,
+		 enum access_op_code op_code)
 {
 	struct credentials *cr = effective_user();
 	/*
@@ -79,11 +104,13 @@ access_check_ddl(uint32_t owner_uid, enum schema_object_type type)
 			tnt_raise(ClientError, ER_ACCESS_DENIED,
 				  priv_name(PRIV_U),
 				  schema_object_name(SC_UNIVERSE),
+				  "",
 				  user->def->name);
 		} else {
 			tnt_raise(ClientError, ER_ACCESS_DENIED,
-				  "Create, drop or alter",
+				  access_op_to_str(op_code),
 				  schema_object_name(type),
+				  name,
 				  user->def->name);
 		}
 	}
@@ -1366,7 +1393,7 @@ on_replace_dd_space(struct trigger * /* trigger */, void *event)
 		struct space_def *def =
 			space_def_new_from_tuple(new_tuple, ER_CREATE_SPACE,
 						 region);
-		access_check_ddl(def->uid, SC_SPACE);
+		access_check_ddl(def->name, def->uid, SC_SPACE, ACCESS_CREATE);
 		auto def_guard =
 			make_scoped_guard([=] { space_def_delete(def); });
 		RLIST_HEAD(empty_list);
@@ -1392,7 +1419,8 @@ on_replace_dd_space(struct trigger * /* trigger */, void *event)
 			txn_alter_trigger_new(on_create_space_rollback, space);
 		txn_on_rollback(txn, on_rollback);
 	} else if (new_tuple == NULL) { /* DELETE */
-		access_check_ddl(old_space->def->uid, SC_SPACE);
+		access_check_ddl(old_space->def->name, old_space->def->uid,
+				 SC_SPACE, ACCESS_DROP);
 		/* Verify that the space is empty (has no indexes) */
 		if (old_space->index_count) {
 			tnt_raise(ClientError, ER_DROP_SPACE,
@@ -1431,7 +1459,7 @@ on_replace_dd_space(struct trigger * /* trigger */, void *event)
 		struct space_def *def =
 			space_def_new_from_tuple(new_tuple, ER_ALTER_SPACE,
 						 region);
-		access_check_ddl(def->uid, SC_SPACE);
+		access_check_ddl(def->name, def->uid, SC_SPACE, ACCESS_ALTER);
 		auto def_guard =
 			make_scoped_guard([=] { space_def_delete(def); });
 		/*
@@ -1505,7 +1533,18 @@ on_replace_dd_index(struct trigger * /* trigger */, void *event)
 	uint32_t iid = tuple_field_u32_xc(old_tuple ? old_tuple : new_tuple,
 					  BOX_INDEX_FIELD_ID);
 	struct space *old_space = space_cache_find_xc(id);
-	access_check_ddl(old_space->def->uid, SC_SPACE);
+	enum access_op_code op_code;
+	if (old_tuple != NULL && new_tuple == NULL) {
+		op_code = ACCESS_DROP;
+	}
+	if (old_tuple == NULL && new_tuple != NULL) {
+		op_code = ACCESS_CREATE;
+	}
+	if (old_tuple != NULL && new_tuple != NULL) {
+		op_code = ACCESS_ALTER;
+	}
+	access_check_ddl(old_space->def->name, old_space->def->uid, SC_SPACE,
+			 op_code);
 	struct index *old_index = space_index(old_space, iid);
 
 	/*
@@ -1914,7 +1953,7 @@ user_cache_alter_user(struct trigger * /* trigger */, void *event)
 	struct txn *txn = (struct txn *) event;
 	struct txn_stmt *stmt = txn_last_stmt(txn);
 	struct user_def *user = user_def_new_from_tuple(stmt->new_tuple);
-	access_check_ddl(user->owner, SC_USER);
+	access_check_ddl(user->name, user->owner, SC_USER, ACCESS_ALTER);
 	auto def_guard = make_scoped_guard([=] { free(user); });
 	/* Can throw if, e.g. too many users. */
 	user_cache_replace(user);
@@ -1938,7 +1977,7 @@ on_replace_dd_user(struct trigger * /* trigger */, void *event)
 	struct user *old_user = user_by_id(uid);
 	if (new_tuple != NULL && old_user == NULL) { /* INSERT */
 		struct user_def *user = user_def_new_from_tuple(new_tuple);
-		access_check_ddl(user->owner, SC_USER);
+		access_check_ddl(user->name, user->owner, SC_USER, ACCESS_CREATE);
 		auto def_guard = make_scoped_guard([=] { free(user); });
 		(void) user_cache_replace(user);
 		def_guard.is_active = false;
@@ -1946,7 +1985,8 @@ on_replace_dd_user(struct trigger * /* trigger */, void *event)
 			txn_alter_trigger_new(user_cache_remove_user, NULL);
 		txn_on_rollback(txn, on_rollback);
 	} else if (new_tuple == NULL) { /* DELETE */
-		access_check_ddl(old_user->def->owner, SC_USER);
+		access_check_ddl(old_user->def->name, old_user->def->owner,
+				 SC_USER, ACCESS_DROP);
 		/* Can't drop guest or super user */
 		if (uid <= (uint32_t) BOX_SYSTEM_USER_ID_MAX) {
 			tnt_raise(ClientError, ER_DROP_USER,
@@ -1972,7 +2012,7 @@ on_replace_dd_user(struct trigger * /* trigger */, void *event)
 		 * correct.
 		 */
 		struct user_def *user = user_def_new_from_tuple(new_tuple);
-		access_check_ddl(user->uid, SC_USER);
+		access_check_ddl(user->name, user->uid, SC_USER, ACCESS_ALTER);
 		auto def_guard = make_scoped_guard([=] { free(user); });
 		struct trigger *on_commit =
 			txn_alter_trigger_new(user_cache_alter_user, NULL);
@@ -2086,7 +2126,8 @@ on_replace_dd_func(struct trigger * /* trigger */, void *event)
 		 * Can only delete func if you're the one
 		 * who created it or a superuser.
 		 */
-		access_check_ddl(uid, SC_FUNCTION);
+		access_check_ddl(old_func->def->name, uid, SC_FUNCTION,
+				 ACCESS_DROP);
 		/* Can only delete func if it has no grants. */
 		if (schema_find_grants("function", old_func->def->fid)) {
 			tnt_raise(ClientError, ER_DROP_FUNCTION,
@@ -2099,7 +2140,8 @@ on_replace_dd_func(struct trigger * /* trigger */, void *event)
 	} else {                                /* UPDATE, REPLACE */
 		struct func_def *def = func_def_new_from_tuple(new_tuple);
 		auto def_guard = make_scoped_guard([=] { free(def); });
-		access_check_ddl(def->uid, SC_FUNCTION);
+		access_check_ddl(def->name, def->uid, SC_FUNCTION,
+				 ACCESS_ALTER);
 		struct trigger *on_commit =
 			txn_alter_trigger_new(func_cache_replace_func, NULL);
 		txn_on_commit(txn, on_commit);
@@ -2237,7 +2279,10 @@ on_replace_dd_collation(struct trigger * /* trigger */, void *event)
 						     BOX_COLLATION_FIELD_ID);
 		old_coll = coll_by_id(old_id);
 		assert(old_coll != NULL);
-		access_check_ddl(old_coll->owner_id, SC_COLLATION);
+		access_check_ddl(old_coll->name, old_coll->owner_id,
+				 SC_COLLATION,
+				 (new_tuple == NULL) ? ACCESS_DROP :
+				 ACCESS_ALTER);
 
 		struct trigger *on_commit =
 			txn_alter_trigger_new(coll_cache_delete_coll, old_coll);
@@ -2257,7 +2302,9 @@ on_replace_dd_collation(struct trigger * /* trigger */, void *event)
 
 	struct coll_def new_def;
 	coll_def_new_from_tuple(new_tuple, &new_def);
-	access_check_ddl(new_def.owner_id, SC_COLLATION);
+	access_check_ddl(new_def.name, new_def.owner_id, SC_COLLATION,
+			 (old_tuple == NULL) ? ACCESS_CREATE:
+			 ACCESS_ALTER);
 	struct coll *new_coll = coll_new(&new_def);
 	if (new_coll == NULL)
 		diag_raise();
@@ -2311,7 +2358,7 @@ priv_def_create_from_tuple(struct priv_def *priv, struct tuple *tuple)
  * In the future we must protect grant/revoke with a logical lock.
  */
 static void
-priv_def_check(struct priv_def *priv)
+priv_def_check(struct priv_def *priv, enum access_op_code op_code)
 {
 	struct user *grantor = user_find_xc(priv->grantor_id);
 	/* May be a role */
@@ -2320,12 +2367,18 @@ priv_def_check(struct priv_def *priv)
 		tnt_raise(ClientError, ER_NO_SUCH_USER,
 			  int2str(priv->grantee_id));
 	}
-	access_check_ddl(grantor->def->uid, priv->object_type);
+	const char *name = find_name_by_object_id(priv->object_id,
+						  priv->object_type);
+	if (name == NULL) {
+		name = "";
+	}
+	access_check_ddl(name, grantor->def->uid, priv->object_type, op_code);
 	switch (priv->object_type) {
 	case SC_UNIVERSE:
 		if (grantor->def->uid != ADMIN) {
 			tnt_raise(ClientError, ER_ACCESS_DENIED,
-				  "Grant", schema_object_name(priv->object_type),
+				  access_op_to_str(op_code), schema_object_name(SC_UNIVERSE),
+				  name,
 				  grantor->def->name);
 		}
 		break;
@@ -2335,7 +2388,8 @@ priv_def_check(struct priv_def *priv)
 		if (space->def->uid != grantor->def->uid &&
 		    grantor->def->uid != ADMIN) {
 			tnt_raise(ClientError, ER_ACCESS_DENIED,
-				  "Grant", schema_object_name(priv->object_type),
+				  access_op_to_str(op_code),
+				  schema_object_name(SC_SPACE), name,
 				  grantor->def->name);
 		}
 		break;
@@ -2346,7 +2400,8 @@ priv_def_check(struct priv_def *priv)
 		if (func->def->uid != grantor->def->uid &&
 		    grantor->def->uid != ADMIN) {
 			tnt_raise(ClientError, ER_ACCESS_DENIED,
-				  "Grant", schema_object_name(priv->object_type),
+				  access_op_to_str(op_code),
+				  schema_object_name(SC_FUNCTION), name,
 				  grantor->def->name);
 		}
 		break;
@@ -2357,7 +2412,8 @@ priv_def_check(struct priv_def *priv)
 		if (seq->def->uid != grantor->def->uid &&
 		    grantor->def->uid != ADMIN) {
 			tnt_raise(ClientError, ER_ACCESS_DENIED,
-				  "Grant", schema_object_name(priv->object_type),
+				  access_op_to_str(op_code),
+				  schema_object_name(SC_SEQUENCE), name,
 				  grantor->def->name);
 		}
 		break;
@@ -2378,7 +2434,9 @@ priv_def_check(struct priv_def *priv)
 		    grantor->def->uid != ADMIN &&
 		    (role->def->uid != PUBLIC || priv->access < PRIV_X)) {
 			tnt_raise(ClientError, ER_ACCESS_DENIED,
-				  "Grant", role->def->name, grantor->def->name);
+				  access_op_to_str(op_code),
+				  schema_object_name(SC_ROLE), name,
+				  grantor->def->name);;
 		}
 		/* Not necessary to do during revoke, but who cares. */
 		role_check(grantee, role);
@@ -2392,6 +2450,7 @@ priv_def_check(struct priv_def *priv)
 	}
 }
 
+#undef REPORT_ERROR
 /**
  * Update a metadata cache object with the new access
  * data.
@@ -2472,7 +2531,7 @@ on_replace_dd_priv(struct trigger * /* trigger */, void *event)
 			priv.access |= PRIV_S;
 			priv.access |= PRIV_U;
 		}
-		priv_def_check(&priv);
+		priv_def_check(&priv, ACCESS_GRANT);
 		grant_or_revoke(&priv);
 		struct trigger *on_rollback =
 			txn_alter_trigger_new(revoke_priv, NULL);
@@ -2480,13 +2539,16 @@ on_replace_dd_priv(struct trigger * /* trigger */, void *event)
 	} else if (new_tuple == NULL) {                /* revoke */
 		assert(old_tuple);
 		priv_def_create_from_tuple(&priv, old_tuple);
-		access_check_ddl(priv.grantor_id, priv.object_type);
+		const char *name = find_name_by_object_id(priv.object_id,
+							  priv.object_type);
+		access_check_ddl(name, priv.grantor_id,
+				    priv.object_type, ACCESS_REVOKE);
 		struct trigger *on_commit =
 			txn_alter_trigger_new(revoke_priv, NULL);
 		txn_on_commit(txn, on_commit);
 	} else {                                       /* modify */
 		priv_def_create_from_tuple(&priv, new_tuple);
-		priv_def_check(&priv);
+		priv_def_check(&priv, ACCESS_GRANT);
 		struct trigger *on_commit =
 			txn_alter_trigger_new(modify_priv, NULL);
 		txn_on_commit(txn, on_commit);
@@ -2773,7 +2835,8 @@ on_replace_dd_sequence(struct trigger * /* trigger */, void *event)
 						 BOX_SEQUENCE_DATA_FIELD_ID);
 		struct sequence *seq = sequence_by_id(id);
 		assert(seq != NULL);
-		access_check_ddl(seq->def->uid, SC_SEQUENCE);
+		access_check_ddl(seq->def->name, seq->def->uid, SC_SEQUENCE,
+				 ACCESS_DROP);
 		if (space_has_data(BOX_SEQUENCE_DATA_ID, 0, id))
 			tnt_raise(ClientError, ER_DROP_SEQUENCE,
 				  seq->def->name, "the sequence has data");
@@ -2789,7 +2852,8 @@ on_replace_dd_sequence(struct trigger * /* trigger */, void *event)
 						      ER_ALTER_SEQUENCE);
 		struct sequence *seq = sequence_by_id(new_def->id);
 		assert(seq != NULL);
-		access_check_ddl(seq->def->uid, SC_SEQUENCE);
+		access_check_ddl(seq->def->name, seq->def->uid, SC_SEQUENCE,
+				 ACCESS_ALTER);
 		alter->old_def = seq->def;
 		alter->new_def = new_def;
 	}
@@ -2863,8 +2927,21 @@ on_replace_dd_space_sequence(struct trigger * /* trigger */, void *event)
 	struct space *space = space_cache_find_xc(space_id);
 	struct sequence *seq = sequence_cache_find(sequence_id);
 
-	access_check_ddl(space->def->uid, SC_SPACE);
-	access_check_ddl(seq->def->uid, SC_SEQUENCE);
+	access_check_ddl(space->def->name, space->def->uid, SC_SPACE,
+			 ACCESS_ALTER);
+	access_op_code seq_op_code;
+	assert(stmt->old_tuple != NULL || stmt->new_tuple != NULL);
+	if (stmt->old_tuple == NULL && stmt->new_tuple != NULL) {
+		seq_op_code = ACCESS_CREATE;
+	}
+	if (stmt->old_tuple != NULL && stmt->new_tuple == NULL) {
+		seq_op_code = ACCESS_DROP;
+	}
+	if (stmt->old_tuple != NULL && stmt->new_tuple != NULL) {
+		seq_op_code = ACCESS_ALTER;
+	}
+	access_check_ddl(seq->def->name, seq->def->uid, SC_SEQUENCE,
+			 seq_op_code);
 
 	struct trigger *on_commit =
 		txn_alter_trigger_new(on_commit_dd_space_sequence, space);
