@@ -242,7 +242,7 @@ access_check_session(struct user *user)
 	 */
 	if (!(universe.access[user->auth_token].effective & PRIV_S)) {
 		diag_set(ClientError, ER_ACCESS_DENIED, priv_name(PRIV_S),
-			 schema_object_name(SC_UNIVERSE),
+			 schema_object_name(SC_UNIVERSE), "",
 			 user->def->name);
 		return -1;
 	}
@@ -272,7 +272,7 @@ access_check_universe(uint8_t access)
 		int denied_access = access & ((credentials->universal_access
 					       & access) ^ access);
 		tnt_raise(ClientError, ER_ACCESS_DENIED,
-			 priv_name(denied_access),
+			 priv_name(denied_access), "",
 			 schema_object_name(SC_UNIVERSE), user->def->name);
 	}
 }
