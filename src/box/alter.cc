@@ -101,13 +101,13 @@ access_check_ddl(const char *name, uint32_t owner_uid,
 	if (access || (owner_uid != cr->uid && cr->uid != ADMIN)) {
 		struct user *user = user_find_xc(cr->uid);
 		if (access) {
-			tnt_raise(ClientError, ER_ACCESS_DENIED,
+			tnt_raise(AccessDeniedError,
 				  priv_name(PRIV_U),
 				  schema_object_name(SC_UNIVERSE),
 				  "",
 				  user->def->name);
 		} else {
-			tnt_raise(ClientError, ER_ACCESS_DENIED,
+			tnt_raise(AccessDeniedError,
 				  access_op_to_str(op_code),
 				  schema_object_name(type),
 				  name,
@@ -2376,7 +2376,7 @@ priv_def_check(struct priv_def *priv, enum access_op_code op_code)
 	switch (priv->object_type) {
 	case SC_UNIVERSE:
 		if (grantor->def->uid != ADMIN) {
-			tnt_raise(ClientError, ER_ACCESS_DENIED,
+			tnt_raise(AccessDeniedError,
 				  access_op_to_str(op_code), schema_object_name(SC_UNIVERSE),
 				  name,
 				  grantor->def->name);
@@ -2387,7 +2387,7 @@ priv_def_check(struct priv_def *priv, enum access_op_code op_code)
 		struct space *space = space_cache_find_xc(priv->object_id);
 		if (space->def->uid != grantor->def->uid &&
 		    grantor->def->uid != ADMIN) {
-			tnt_raise(ClientError, ER_ACCESS_DENIED,
+			tnt_raise(AccessDeniedError,
 				  access_op_to_str(op_code),
 				  schema_object_name(SC_SPACE), name,
 				  grantor->def->name);
@@ -2399,7 +2399,7 @@ priv_def_check(struct priv_def *priv, enum access_op_code op_code)
 		struct func *func = func_cache_find(priv->object_id);
 		if (func->def->uid != grantor->def->uid &&
 		    grantor->def->uid != ADMIN) {
-			tnt_raise(ClientError, ER_ACCESS_DENIED,
+			tnt_raise(AccessDeniedError,
 				  access_op_to_str(op_code),
 				  schema_object_name(SC_FUNCTION), name,
 				  grantor->def->name);
@@ -2411,7 +2411,7 @@ priv_def_check(struct priv_def *priv, enum access_op_code op_code)
 		struct sequence *seq = sequence_cache_find(priv->object_id);
 		if (seq->def->uid != grantor->def->uid &&
 		    grantor->def->uid != ADMIN) {
-			tnt_raise(ClientError, ER_ACCESS_DENIED,
+			tnt_raise(AccessDeniedError,
 				  access_op_to_str(op_code),
 				  schema_object_name(SC_SEQUENCE), name,
 				  grantor->def->name);
@@ -2433,7 +2433,7 @@ priv_def_check(struct priv_def *priv, enum access_op_code op_code)
 		if (role->def->owner != grantor->def->uid &&
 		    grantor->def->uid != ADMIN &&
 		    (role->def->uid != PUBLIC || priv->access < PRIV_X)) {
-			tnt_raise(ClientError, ER_ACCESS_DENIED,
+			tnt_raise(AccessDeniedError,
 				  access_op_to_str(op_code),
 				  schema_object_name(SC_ROLE), name,
 				  grantor->def->name);;

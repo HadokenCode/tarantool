@@ -219,4 +219,12 @@ extern struct rlist on_alter_space;
  */
 extern struct rlist on_alter_sequence;
 
+extern struct rlist on_access_denied;
+
+struct access_denied_params {
+	const char *type;
+	const char *name;
+	const char *op_type;
+};
+
 #endif /* INCLUDES_TARANTOOL_BOX_SCHEMA_H */

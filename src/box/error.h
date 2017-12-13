@@ -39,6 +39,10 @@ extern "C" {
 struct error *
 BuildClientError(const char *file, unsigned line, uint32_t errcode, ...);
 
+struct error *
+BuildAccessDeniedError(const char *file, unsigned int line, ...);
+
+
 /** \cond public */
 
 struct error;
@@ -170,6 +174,11 @@ public:
 		/* TODO: actually calls ClientError::log */
 		log();
 	}
+};
+
+class AccessDeniedError: public ClientError {
+public:
+    AccessDeniedError(const char *file, unsigned int line, ...);
 };
 
 /**
