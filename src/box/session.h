@@ -104,6 +104,8 @@ extern struct rlist session_on_connect;
 
 extern struct rlist session_on_auth;
 
+extern struct rlist session_on_auth_fail;
+
 /**
  * Get the current session from @a fiber
  * @param fiber fiber

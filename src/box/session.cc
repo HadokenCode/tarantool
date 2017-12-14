@@ -52,6 +52,7 @@ struct mempool session_pool;
 RLIST_HEAD(session_on_connect);
 RLIST_HEAD(session_on_disconnect);
 RLIST_HEAD(session_on_auth);
+RLIST_HEAD(session_on_auth_fail);
 
 static inline uint64_t
 sid_max()
