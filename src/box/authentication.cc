@@ -82,8 +82,10 @@ authenticate(const char *user_name, uint32_t len,
 			   "invalid scramble size");
 	}
 
-	if (scramble_check(scramble, session->salt, user->def->hash2))
+	if (scramble_check(scramble, session->salt, user->def->hash2)) {
+		trigger_run(&session_on_auth_fail, user->def->name);
 		tnt_raise(ClientError, ER_PASSWORD_MISMATCH, user->def->name);
+	}
 
 	/* check and run auth triggers on success */
 	if (! rlist_empty(&session_on_auth) &&
