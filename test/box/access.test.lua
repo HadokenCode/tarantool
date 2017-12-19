@@ -92,18 +92,15 @@ session.su('admin')
 session.user()
 
 --------------------------------------------------------------------------------
--- #198: names like '' and 'x.y' and 5 and 'primary ' are legal
+-- Check if identifiers obey the common constraints
 --------------------------------------------------------------------------------
--- invalid identifiers
-box.schema.user.create('invalid.identifier')
-box.schema.user.create('invalid identifier')
-box.schema.user.create('user ')
-box.schema.user.create('5')
-box.schema.user.create(' ')
-
--- valid identifiers
-box.schema.user.create('Петя_Иванов')
-box.schema.user.drop('Петя_Иванов')
+identifier_testcases = require("identifier_testcases")
+test_run:cmd("setopt delimiter ';'")
+identifier_testcases.run_identifier_tests(
+    box.schema.user.create,
+    box.schema.user.drop
+);
+test_run:cmd("setopt delimiter ''");
 
 -- gh-300: misleading error message if a function does not exist
 LISTEN = require('uri').parse(box.cfg.listen)

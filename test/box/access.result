@@ -209,35 +209,25 @@ session.user()
 - admin
 ...
 --------------------------------------------------------------------------------
--- #198: names like '' and 'x.y' and 5 and 'primary ' are legal
+-- Check if identifiers obey the common constraints
 --------------------------------------------------------------------------------
--- invalid identifiers
-box.schema.user.create('invalid.identifier')
----
-- error: Invalid identifier 'invalid.identifier' (expected letters, digits or an underscore)
-...
-box.schema.user.create('invalid identifier')
----
-- error: Invalid identifier 'invalid identifier' (expected letters, digits or an underscore)
-...
-box.schema.user.create('user ')
----
-- error: Invalid identifier 'user ' (expected letters, digits or an underscore)
-...
-box.schema.user.create('5')
----
-- error: Invalid identifier '5' (expected letters, digits or an underscore)
-...
-box.schema.user.create(' ')
----
-- error: Invalid identifier ' ' (expected letters, digits or an underscore)
-...
--- valid identifiers
-box.schema.user.create('Петя_Иванов')
+identifier_testcases = require("identifier_testcases")
 ---
 ...
-box.schema.user.drop('Петя_Иванов')
+test_run:cmd("setopt delimiter ';'")
 ---
+- true
+...
+identifier_testcases.run_identifier_tests(
+    box.schema.user.create,
+    box.schema.user.drop
+);
+---
+- All tests passed
+...
+test_run:cmd("setopt delimiter ''");
+---
+- true
 ...
 -- gh-300: misleading error message if a function does not exist
 LISTEN = require('uri').parse(box.cfg.listen)

@@ -237,11 +237,16 @@ schema_object_name(enum schema_object_type type);
 
 /**
  * Check object identifier for invalid symbols.
- * The function checks \a str for matching [a-zA-Z_][a-zA-Z0-9_]* expression.
- * Result is locale-dependent.
+ * The function checks the str for being printable.
  */
 bool
-identifier_is_valid(const char *str, uint32_t len);
+identifier_characters_is_valid(const char *str, uint32_t len);
+
+int
+init_identifier_check();
+
+void
+destroy_identifier_check();
 
 #if defined(__cplusplus)
 } /* extern "C" */
@@ -254,9 +259,15 @@ identifier_is_valid(const char *str, uint32_t len);
 static inline void
 identifier_check_xc(const char *str, uint32_t len)
 {
-	if (! identifier_is_valid(str, len))
+	if (! identifier_characters_is_valid(str, len))
 		tnt_raise(ClientError, ER_IDENTIFIER, tt_cstr(str, len));
 }
+
+static inline void
+init_identifier_check_xc(){
+	if ( init_identifier_check() == -1 )
+		tnt_raise(ClientError, ER_ICU_INITIALIZE);
+};
 
 #endif /* defined(__cplusplus) */
 

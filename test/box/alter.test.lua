@@ -103,37 +103,6 @@ space:truncate()
 space:pairs():totable()
 space:drop()
 
---------------------------------------------------------------------------------
--- #198: names like '' and 'x.y' and 5 and 'primary ' are legal
---------------------------------------------------------------------------------
-
--- invalid identifiers
-box.schema.space.create('invalid.identifier')
-box.schema.space.create('invalid identifier')
-box.schema.space.create('primary ')
-box.schema.space.create('5')
-box.schema.space.create('')
-
--- valid identifiers
-box.schema.space.create('_Abcde'):drop()
-box.schema.space.create('_5'):drop()
-box.schema.space.create('valid_identifier'):drop()
--- some OS-es ship incomplete locales, breaking ID validation
-weird_chars=''
-if jit.os~='OSX' and jit.os~='BSD' then weird_chars='空間' end
-box.schema.space.create('ынтыпрайзный_'..weird_chars):drop() -- unicode
-box.schema.space.create('utf8_наше_Фсё'):drop() -- unicode
-
-space = box.schema.space.create('test')
-
--- invalid identifiers
-space:create_index('invalid.identifier')
-space:create_index('invalid identifier')
-space:create_index('primary ')
-space:create_index('5')
-space:create_index('')
-
-space:drop()
 -- gh-57 Confusing error message when trying to create space with a
 -- duplicate id
 auto = box.schema.space.create('auto_original')
@@ -661,3 +630,14 @@ pk:alter{parts = {{1, 'integer'}}}
 s:replace{-2}
 s:select{}
 s:drop()
+
+--
+-- gh-2914: Allow any identifier which cocnsists of printable characters
+--
+identifier_testcases = require("identifier_testcases")
+test_run:cmd("setopt delimiter ';'")
+identifier_testcases.run_identifier_tests(
+    box.schema.space.create,
+    function (identifier) box.space[identifier]:drop() end
+);
+test_run:cmd("setopt delimiter ''");

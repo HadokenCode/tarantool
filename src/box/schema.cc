@@ -263,6 +263,10 @@ schema_init()
 	funcs = mh_i32ptr_new();
 	funcs_by_name = mh_strnptr_new();
 	sequences = mh_i32ptr_new();
+
+	/* Initialize identifier validator */
+	init_identifier_check_xc();
+
 	/*
 	 * Create surrogate space objects for the mandatory system
 	 * spaces (the primal eggs from which we get all the
@@ -345,6 +349,7 @@ schema_init()
 void
 schema_free(void)
 {
+	destroy_identifier_check();
 	if (spaces == NULL)
 		return;
 	while (mh_size(spaces) > 0) {

@@ -31,6 +31,9 @@
 #include "schema_def.h"
 #include <wchar.h>
 #include <wctype.h>
+#include <unicode/ucnv_err.h>
+#include <unicode/ucnv.h>
+#include <unicode/uchar.h>
 
 static const char *object_type_strs[] = {
 	/* [SC_UKNNOWN]         = */ "unknown",
@@ -42,6 +45,11 @@ static const char *object_type_strs[] = {
 	/* [SC_SEQUENCE]        = */ "sequence",
 	/* [SC_COLLATION]       = */ "collation",
 };
+
+/* ICU returns this character in case of unknown symbol */
+#define REPLACEMENT_CHARACTER (0xFFFD)
+
+static UConverter* utf8conv = NULL;
 
 enum schema_object_type
 schema_object_type(const char *name)
@@ -63,26 +71,43 @@ schema_object_name(enum schema_object_type type)
 }
 
 bool
-identifier_is_valid(const char *str, uint32_t str_len)
+identifier_characters_is_valid(const char *str, uint32_t str_len)
 {
-	mbstate_t state;
-	memset(&state, 0, sizeof(state));
-	wchar_t w;
-	ssize_t len = mbrtowc(&w, str, str_len, &state);
-	if (len <= 0)
-		return false; /* invalid character or zero-length string */
-	if (!iswalpha(w) && w != L'_')
-		return false; /* fail to match [a-zA-Z_] */
-
-	while (str_len > 0 && (len = mbrtowc(&w, str, str_len, &state)) > 0) {
-		if (!iswalnum(w) && w != L'_')
-			return false; /* fail to match [a-zA-Z0-9_]* */
-		str_len -= len;
-		str += len;
+	assert(utf8conv);
+	if (str_len == 0)
+		return false;
+	const char * end = str + str_len;
+	UChar32 c;
+	UErrorCode status = U_ZERO_ERROR ;
+	ucnv_reset(utf8conv);
+	while(str < end){
+		c = ucnv_getNextUChar(utf8conv, &str, end, &status);
+		int8_t type = u_charType(c);
+		if (U_FAILURE(status))
+			return false;
+		if (c == REPLACEMENT_CHARACTER ||
+			type == U_UNASSIGNED ||
+			type == U_LINE_SEPARATOR ||
+			type == U_CONTROL_CHAR ||
+			type == U_PARAGRAPH_SEPARATOR)
+			return false;
 	}
-
-	if (len < 0)
-		return false; /* invalid character  */
-
 	return true;
+}
+
+int
+init_identifier_check(){
+	assert(utf8conv == NULL);
+	UErrorCode status = U_ZERO_ERROR ;
+	utf8conv = ucnv_open("utf8", &status);
+	if (U_FAILURE(status))
+		return -1;
+	return 0;
+}
+
+void
+destroy_identifier_check(){
+	assert(utf8conv);
+	ucnv_close(utf8conv);
+	utf8conv = NULL;
 }

@@ -372,6 +372,7 @@ t;
   - 'box.error.INDEX_TYPE : 13'
   - 'box.error.NO_SUCH_PROC : 33'
   - 'box.error.MEMORY_ISSUE : 2'
+  - 'box.error.ICU_INITIALIZE : 154'
   - 'box.error.KEY_PART_TYPE : 18'
   - 'box.error.CREATE_FUNCTION : 50'
   - 'box.error.ALREADY_RUNNING : 126'

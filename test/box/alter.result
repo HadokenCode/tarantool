@@ -306,80 +306,6 @@ space:pairs():totable()
 space:drop()
 ---
 ...
---------------------------------------------------------------------------------
--- #198: names like '' and 'x.y' and 5 and 'primary ' are legal
---------------------------------------------------------------------------------
--- invalid identifiers
-box.schema.space.create('invalid.identifier')
----
-- error: Invalid identifier 'invalid.identifier' (expected letters, digits or an underscore)
-...
-box.schema.space.create('invalid identifier')
----
-- error: Invalid identifier 'invalid identifier' (expected letters, digits or an underscore)
-...
-box.schema.space.create('primary ')
----
-- error: Invalid identifier 'primary ' (expected letters, digits or an underscore)
-...
-box.schema.space.create('5')
----
-- error: Invalid identifier '5' (expected letters, digits or an underscore)
-...
-box.schema.space.create('')
----
-- error: Invalid identifier '' (expected letters, digits or an underscore)
-...
--- valid identifiers
-box.schema.space.create('_Abcde'):drop()
----
-...
-box.schema.space.create('_5'):drop()
----
-...
-box.schema.space.create('valid_identifier'):drop()
----
-...
--- some OS-es ship incomplete locales, breaking ID validation
-weird_chars=''
----
-...
-if jit.os~='OSX' and jit.os~='BSD' then weird_chars='空間' end
----
-...
-box.schema.space.create('ынтыпрайзный_'..weird_chars):drop() -- unicode
----
-...
-box.schema.space.create('utf8_наше_Фсё'):drop() -- unicode
----
-...
-space = box.schema.space.create('test')
----
-...
--- invalid identifiers
-space:create_index('invalid.identifier')
----
-- error: Invalid identifier 'invalid.identifier' (expected letters, digits or an underscore)
-...
-space:create_index('invalid identifier')
----
-- error: Invalid identifier 'invalid identifier' (expected letters, digits or an underscore)
-...
-space:create_index('primary ')
----
-- error: Invalid identifier 'primary ' (expected letters, digits or an underscore)
-...
-space:create_index('5')
----
-- error: Invalid identifier '5' (expected letters, digits or an underscore)
-...
-space:create_index('')
----
-- error: Invalid identifier '' (expected letters, digits or an underscore)
-...
-space:drop()
----
-...
 -- gh-57 Confusing error message when trying to create space with a
 -- duplicate id
 auto = box.schema.space.create('auto_original')
@@ -630,7 +556,7 @@ s.index.pk
     is_nullable: false
     fieldno: 2
   id: 0
-  space_id: 731
+  space_id: 720
   name: pk
   type: TREE
 ...
@@ -660,7 +586,7 @@ s.index.pk
     is_nullable: false
     fieldno: 1
   id: 0
-  space_id: 731
+  space_id: 720
   name: pk
   type: TREE
 ...
@@ -672,7 +598,7 @@ s.index.secondary
     is_nullable: false
     fieldno: 2
   id: 1
-  space_id: 731
+  space_id: 720
   name: secondary
   type: TREE
 ...
@@ -1570,7 +1496,7 @@ s:create_index('primary', { parts = {'field1'} })
     is_nullable: false
     fieldno: 1
   id: 0
-  space_id: 747
+  space_id: 736
   name: primary
   type: TREE
 ...
@@ -1616,7 +1542,7 @@ s:create_index('secondary', { parts = {{2, 'string', is_nullable = true}} })
     is_nullable: true
     fieldno: 2
   id: 1
-  space_id: 747
+  space_id: 736
   name: secondary
   type: TREE
 ...
@@ -1734,4 +1660,25 @@ s:select{}
 ...
 s:drop()
 ---
+...
+--
+-- gh-2914: Allow any identifier which cocnsists of printable characters
+--
+identifier_testcases = require("identifier_testcases")
+---
+...
+test_run:cmd("setopt delimiter ';'")
+---
+- true
+...
+identifier_testcases.run_identifier_tests(
+    box.schema.space.create,
+    function (identifier) box.space[identifier]:drop() end
+);
+---
+- All tests passed
+...
+test_run:cmd("setopt delimiter ''");
+---
+- true
 ...
