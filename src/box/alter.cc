@@ -1914,6 +1914,7 @@ user_cache_alter_user(struct trigger * /* trigger */, void *event)
 	struct txn *txn = (struct txn *) event;
 	struct txn_stmt *stmt = txn_last_stmt(txn);
 	struct user_def *user = user_def_new_from_tuple(stmt->new_tuple);
+	access_check_ddl(user->owner, SC_USER);
 	auto def_guard = make_scoped_guard([=] { free(user); });
 	/* Can throw if, e.g. too many users. */
 	user_cache_replace(user);
