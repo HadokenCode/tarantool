@@ -316,6 +316,11 @@ field_def_decode(struct field_def *field, const char **data,
 			  tt_sprintf("field %d has unknown field type",
 				     fieldno + TUPLE_INDEX_BASE));
 	}
+	if (field->action == on_conflict_action_MAX) {
+		tnt_raise(ClientError, errcode, tt_cstr(space_name, name_len),
+			  tt_sprintf("field %d has unknown field on conflict action",
+				     fieldno + TUPLE_INDEX_BASE));
+	}
 }
 
 /**

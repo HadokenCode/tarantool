@@ -371,7 +371,7 @@ sqlite3TriggerSelectStep(sqlite3 * db, Select * pSelect)
 	}
 	pTriggerStep->op = TK_SELECT;
 	pTriggerStep->pSelect = pSelect;
-	pTriggerStep->orconf = OE_Default;
+	pTriggerStep->orconf = ON_CONFLICT_ACTION_DEFAULT;
 	return pTriggerStep;
 }
 
@@ -479,7 +479,7 @@ sqlite3TriggerDeleteStep(sqlite3 * db,	/* Database connection */
 	if (pTriggerStep) {
 		pTriggerStep->pWhere =
 		    sqlite3ExprDup(db, pWhere, EXPRDUP_REDUCE);
-		pTriggerStep->orconf = OE_Default;
+		pTriggerStep->orconf = ON_CONFLICT_ACTION_DEFAULT;
 	}
 	sqlite3ExprDelete(db, pWhere);
 	return pTriggerStep;
@@ -751,7 +751,7 @@ codeTriggerProgram(Parse * pParse,	/* The parser context */
 		 *   INSERT OR IGNORE INTO t1 ... ;  -- insert into t2 uses IGNORE policy
 		 */
 		pParse->eOrconf =
-		    (orconf == OE_Default) ? pStep->orconf : (u8) orconf;
+		    (orconf == ON_CONFLICT_ACTION_DEFAULT) ? pStep->orconf : (u8) orconf;
 		assert(pParse->okConstFactor == 0);
 
 		switch (pStep->op) {
@@ -816,17 +816,17 @@ static const char *
 onErrorText(int onError)
 {
 	switch (onError) {
-	case OE_Abort:
+	case ON_CONFLICT_ACTION_ABORT:
 		return "abort";
-	case OE_Rollback:
+	case ON_CONFLICT_ACTION_ROLLBACK:
 		return "rollback";
-	case OE_Fail:
+	case ON_CONFLICT_ACTION_FAIL:
 		return "fail";
-	case OE_Replace:
+	case ON_CONFLICT_ACTION_REPLACE:
 		return "replace";
-	case OE_Ignore:
+	case ON_CONFLICT_ACTION_IGNORE:
 		return "ignore";
-	case OE_Default:
+	case ON_CONFLICT_ACTION_DEFAULT:
 		return "default";
 	}
 	return "n/a";

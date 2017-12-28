@@ -2404,7 +2404,7 @@ static void yy_reduce(
         break;
       case 40: /* refargs ::= */
 #line 298 "parse.y"
-{ yymsp[1].minor.yy322 = OE_None*0x0101; /* EV: R-19803-45884 */}
+{ yymsp[1].minor.yy322 = ON_CONFLICT_ACTION_NONE*0x0101; /* EV: R-19803-45884 */}
 #line 2409 "parse.c"
         break;
       case 41: /* refargs ::= refargs refarg */
@@ -2454,7 +2454,7 @@ static void yy_reduce(
         break;
       case 50: /* refact ::= NO ACTION */
 #line 310 "parse.y"
-{ yymsp[-1].minor.yy322 = OE_None;     /* EV: R-33326-45252 */}
+{ yymsp[-1].minor.yy322 = ON_CONFLICT_ACTION_NONE;     /* EV: R-33326-45252 */}
 #line 2459 "parse.c"
         break;
       case 51: /* defer_subclause ::= NOT DEFERRABLE init_deferred_pred_opt */
@@ -2515,7 +2515,7 @@ static void yy_reduce(
       case 64: /* onconf ::= */
       case 66: /* orconf ::= */ yytestcase(yyruleno==66);
 #line 348 "parse.y"
-{yymsp[1].minor.yy322 = OE_Default;}
+{yymsp[1].minor.yy322 = ON_CONFLICT_ACTION_DEFAULT;}
 #line 2520 "parse.c"
         break;
       case 65: /* onconf ::= ON CONFLICT resolvetype */
@@ -2525,13 +2525,13 @@ static void yy_reduce(
         break;
       case 68: /* resolvetype ::= IGNORE */
 #line 353 "parse.y"
-{yymsp[0].minor.yy322 = OE_Ignore;}
+{yymsp[0].minor.yy322 = ON_CONFLICT_ACTION_IGNORE;}
 #line 2530 "parse.c"
         break;
       case 69: /* resolvetype ::= REPLACE */
       case 139: /* insert_cmd ::= REPLACE */ yytestcase(yyruleno==139);
 #line 354 "parse.y"
-{yymsp[0].minor.yy322 = OE_Replace;}
+{yymsp[0].minor.yy322 = ON_CONFLICT_ACTION_REPLACE;}
 #line 2536 "parse.c"
         break;
       case 70: /* cmd ::= DROP TABLE ifexists fullname */
@@ -3424,12 +3424,12 @@ static void yy_reduce(
       case 202: /* uniqueflag ::= UNIQUE */
       case 242: /* raisetype ::= ABORT */ yytestcase(yyruleno==242);
 #line 1246 "parse.y"
-{yymsp[0].minor.yy322 = OE_Abort;}
+{yymsp[0].minor.yy322 = ON_CONFLICT_ACTION_ABORT;}
 #line 3429 "parse.c"
         break;
       case 203: /* uniqueflag ::= */
 #line 1247 "parse.y"
-{yymsp[1].minor.yy322 = OE_None;}
+{yymsp[1].minor.yy322 = ON_CONFLICT_ACTION_NONE;}
 #line 3434 "parse.c"
         break;
       case 206: /* eidlist ::= eidlist COMMA nm collate sortorder */
@@ -3625,7 +3625,7 @@ static void yy_reduce(
   spanSet(&yymsp[-3].minor.yy200,&yymsp[-3].minor.yy0,&yymsp[0].minor.yy0);  /*A-overwrites-X*/
   yymsp[-3].minor.yy200.pExpr = sqlite3PExpr(pParse, TK_RAISE, 0, 0); 
   if( yymsp[-3].minor.yy200.pExpr ){
-    yymsp[-3].minor.yy200.pExpr->affinity = OE_Ignore;
+    yymsp[-3].minor.yy200.pExpr->affinity = ON_CONFLICT_ACTION_IGNORE;
   }
 }
 #line 3632 "parse.c"
@@ -3643,12 +3643,12 @@ static void yy_reduce(
         break;
       case 241: /* raisetype ::= ROLLBACK */
 #line 1460 "parse.y"
-{yymsp[0].minor.yy322 = OE_Rollback;}
+{yymsp[0].minor.yy322 = ON_CONFLICT_ACTION_ROLLBACK;}
 #line 3648 "parse.c"
         break;
       case 243: /* raisetype ::= FAIL */
 #line 1462 "parse.y"
-{yymsp[0].minor.yy322 = OE_Fail;}
+{yymsp[0].minor.yy322 = ON_CONFLICT_ACTION_FAIL;}
 #line 3653 "parse.c"
         break;
       case 244: /* cmd ::= DROP TRIGGER ifexists fullname */

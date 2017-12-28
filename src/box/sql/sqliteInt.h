@@ -63,6 +63,7 @@
  * asterisks and the comment text.
  */
 
+#include <box/field_def.h>
 #include <stdbool.h>
 #include <trivia/util.h>
 #include "box/txn.h"
@@ -1451,7 +1452,9 @@ struct Column {
 	char *zName;		/* Name of this column, \000, then the type */
 	Expr *pDflt;		/* Default value of this column */
 	char *zColl;		/* Collating sequence.  If NULL, use the default */
-	u8 notNull;		/* An OE_ code for handling a NOT NULL constraint */
+	enum on_conflict_action notNull;  /* An ON_CONFLICT_ACTION code for
+					   * handling a NOT NULL constraint
+					   */
 	char affinity;		/* One of the SQLITE_AFF_... values */
 	u8 szEst;		/* Estimated size of value in this column. sizeof(INT)==1 */
 	u8 colFlags;		/* Boolean properties.  See COLFLAG_ defines below */
@@ -1627,43 +1630,17 @@ struct FKey {
 };
 
 /*
- * SQLite supports many different ways to resolve a constraint
- * error.  ROLLBACK processing means that a constraint violation
- * causes the operation in process to fail and for the current transaction
- * to be rolled back.  ABORT processing means the operation in process
- * fails and any prior changes from that one operation are backed out,
- * but the transaction is not rolled back.  FAIL processing means that
- * the operation in progress stops and returns an error code.  But prior
- * changes due to the same operation are not backed out and no rollback
- * occurs.  IGNORE means that the particular row that caused the constraint
- * error is not inserted or updated.  Processing continues and no error
- * is returned.  REPLACE means that preexisting database rows that caused
- * a UNIQUE constraint violation are removed so that the new insert or
- * update can proceed.  Processing continues and no error is reported.
- *
  * RESTRICT, SETNULL, and CASCADE actions apply only to foreign keys.
  * RESTRICT is the same as ABORT for IMMEDIATE foreign keys and the
  * same as ROLLBACK for DEFERRED keys.  SETNULL means that the foreign
  * key is set to NULL.  CASCADE means that a DELETE or UPDATE of the
  * referenced table row is propagated into the row that holds the
  * foreign key.
- *
- * The following symbolic values are used to record which type
- * of action to take.
  */
-#define OE_None     0		/* There is no constraint to check */
-#define OE_Rollback 1		/* Fail the operation and rollback the transaction */
-#define OE_Abort    2		/* Back out changes but do no rollback transaction */
-#define OE_Fail     3		/* Stop the operation but leave all prior changes */
-#define OE_Ignore   4		/* Ignore the error. Do not do the INSERT or UPDATE */
-#define OE_Replace  5		/* Delete existing record, then do INSERT or UPDATE */
-
 #define OE_Restrict 6		/* OE_Abort for IMMEDIATE, OE_Rollback for DEFERRED */
 #define OE_SetNull  7		/* Set the foreign key value to NULL */
 #define OE_SetDflt  8		/* Set the foreign key value to its default */
 #define OE_Cascade  9		/* Cascade the changes */
-
-#define OE_Default  10		/* Do whatever the default action is */
 
 /*
  * An instance of the following structure is passed as the first
@@ -1809,7 +1786,7 @@ struct Index {
 #define IsPrimaryKeyIndex(X)  ((X)->idxType==SQLITE_IDXTYPE_PRIMARYKEY)
 
 /* Return true if index X is a UNIQUE index */
-#define IsUniqueIndex(X)      ((X)->onError!=OE_None)
+#define IsUniqueIndex(X)      ((X)->onError != ON_CONFLICT_ACTION_NONE)
 
 /* The Index.aiColumn[] values are normally positive integer.  But
  * there are some negative values that have special meaning:
@@ -3404,7 +3381,7 @@ int sqlite3ExprCanBeNull(const Expr *);
 int sqlite3ExprNeedsNoAffinityChange(const Expr *, char);
 int sqlite3IsRowid(const char *);
 void sqlite3GenerateRowDelete(Parse *, Table *, Trigger *, int, int, int, i16,
-			      u8, u8, u8, int);
+			      u8, enum on_conflict_action, u8, int);
 void sqlite3GenerateRowIndexDelete(Parse *, Table *, int, int);
 int sqlite3GenerateIndexKey(Parse *, Index *, int, int, int, int *, Index *,
 			    int);
@@ -3877,4 +3854,11 @@ void sqlite3VectorErrorMsg(Parse *, Expr *);
 extern int sqlSubProgramsRemaining;
 
 extern int sqlite3InitDatabase(sqlite3 * db, char **pzErrMsg);
+
+enum on_conflict_action
+table_column_nullable_action(struct Table *tab, uint32_t column);
+
+bool
+table_column_is_nullable(struct Table *tab, uint32_t column);
+
 #endif				/* SQLITEINT_H */

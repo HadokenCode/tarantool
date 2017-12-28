@@ -187,7 +187,7 @@ actionName(u8 action)
 		break;
 	default:
 		zName = "NO ACTION";
-		assert(action == OE_None);
+		assert(action == ON_CONFLICT_ACTION_NONE);
 		break;
 	}
 	return zName;
@@ -482,17 +482,17 @@ sqlite3Pragma(Parse * pParse, Token * pId,	/* First part of [schema.]id field */
 					}
 					assert(pCol->pDflt == 0
 					       || pCol->pDflt->op == TK_SPAN);
+					bool nullable = table_column_is_nullable(pTab, i);
+					char *type = sqlite3ColumnType(pCol, "");
 					sqlite3VdbeMultiLoad(v, 1, "issisi",
 							     i - nHidden,
 							     pCol->zName,
-							     sqlite3ColumnType
-							     (pCol, ""),
-							     pCol->
-							     notNull ? 1 : 0,
+							     type,
+							     nullable == 0,
 							     pCol->
 							     pDflt ? pCol->
-							     pDflt->u.
-							     zToken : 0, k);
+							     pDflt->u.zToken
+							     : 0, k);
 					sqlite3VdbeAddOp2(v, OP_ResultRow, 1,
 							  6);
 				}

@@ -2185,7 +2185,8 @@ sqlite3ExprCanBeNull(const Expr * p)
 	case TK_COLUMN:
 		assert(p->pTab != 0);
 		return ExprHasProperty(p, EP_CanBeNull) ||
-		    (p->iColumn >= 0 && p->pTab->aCol[p->iColumn].notNull == 0);
+		       (p->iColumn >= 0
+		        && table_column_is_nullable(p->pTab, p->iColumn));
 	default:
 		return 1;
 	}
@@ -4592,22 +4593,23 @@ sqlite3ExprCodeTarget(Parse * pParse, Expr * pExpr, int target)
 		}
 #ifndef SQLITE_OMIT_TRIGGER
 	case TK_RAISE:{
-			assert(pExpr->affinity == OE_Rollback
-			       || pExpr->affinity == OE_Abort
-			       || pExpr->affinity == OE_Fail
-			       || pExpr->affinity == OE_Ignore);
+			assert(pExpr->affinity == ON_CONFLICT_ACTION_ROLLBACK
+			       || pExpr->affinity == ON_CONFLICT_ACTION_ABORT
+			       || pExpr->affinity == ON_CONFLICT_ACTION_FAIL
+			       || pExpr->affinity == ON_CONFLICT_ACTION_IGNORE);
 			if (!pParse->pTriggerTab) {
 				sqlite3ErrorMsg(pParse,
 						"RAISE() may only be used within a trigger-program");
 				return 0;
 			}
-			if (pExpr->affinity == OE_Abort) {
+			if (pExpr->affinity == ON_CONFLICT_ACTION_ABORT) {
 				sqlite3MayAbort(pParse);
 			}
 			assert(!ExprHasProperty(pExpr, EP_IntValue));
-			if (pExpr->affinity == OE_Ignore) {
+			if (pExpr->affinity == ON_CONFLICT_ACTION_IGNORE) {
 				sqlite3VdbeAddOp4(v, OP_Halt, SQLITE_OK,
-						  OE_Ignore, 0, pExpr->u.zToken,
+						  ON_CONFLICT_ACTION_IGNORE, 0,
+						  pExpr->u.zToken,
 						  0);
 				VdbeCoverage(v);
 			} else {

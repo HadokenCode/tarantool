@@ -33,16 +33,18 @@
  * This file contains code used for creating, destroying, and populating
  * a VDBE (or an "sqlite3_stmt" as it is known to the outside world.)
  */
-#include <box/coll_cache.h>
-#include "box/txn.h"
 #include "fiber.h"
+#include "box/coll_cache.h"
+#include "box/schema.h"
 #include "box/session.h"
+#include "box/tuple_format.h"
+#include "box/txn.h"
+#include "msgpuck/msgpuck.h"
+
 #include "sqliteInt.h"
 #include "btreeInt.h"
 #include "vdbeInt.h"
 #include "tarantoolInt.h"
-
-#include "msgpuck/msgpuck.h"
 
 /*
  * Create a new virtual database engine.
@@ -612,7 +614,7 @@ sqlite3VdbeAssertMayAbort(Vdbe * v, int mayAbort)
 		if (opcode == OP_Destroy ||
 		    ((opcode == OP_Halt || opcode == OP_HaltIfNull)
 			&& ((pOp->p1 & 0xff) == SQLITE_CONSTRAINT
-			    && pOp->p2 == OE_Abort))
+			    && pOp->p2 == ON_CONFLICT_ACTION_ABORT))
 		    ) {
 			hasAbort = 1;
 			break;
@@ -2186,7 +2188,7 @@ sqlite3VdbeRewind(Vdbe * p)
 #endif
 	p->pc = -1;
 	p->rc = SQLITE_OK;
-	p->errorAction = OE_Abort;
+	p->errorAction = ON_CONFLICT_ACTION_ABORT;
 	p->nChange = 0;
 	p->cacheCtr = 1;
 	p->minWriteFileFormat = 255;
@@ -2691,7 +2693,7 @@ sqlite3VdbeCheckFk(Vdbe * p, int deferred)
 	    || (!deferred && p->nFkConstraint > 0)
 	    ) {
 		p->rc = SQLITE_CONSTRAINT_FOREIGNKEY;
-		p->errorAction = OE_Abort;
+		p->errorAction = ON_CONFLICT_ACTION_ABORT;
 		sqlite3VdbeError(p, "FOREIGN KEY constraint failed");
 		return SQLITE_ERROR;
 	}
@@ -2853,7 +2855,8 @@ sqlite3VdbeHalt(Vdbe * p)
 		 */
 		if (p->autoCommit) {
 			if (p->rc == SQLITE_OK
-			    || (p->errorAction == OE_Fail && !isSpecialError)) {
+			    || (p->errorAction == ON_CONFLICT_ACTION_FAIL
+				&& !isSpecialError)) {
 				rc = sqlite3VdbeCheckFk(p, 1);
 				if (rc != SQLITE_OK) {
 					if (NEVER(p->readOnly)) {
@@ -2900,9 +2903,9 @@ sqlite3VdbeHalt(Vdbe * p)
 			}
 			p->anonymous_savepoint = NULL;
 		} else if (eStatementOp == 0) {
-			if (p->rc == SQLITE_OK || p->errorAction == OE_Fail) {
+			if (p->rc == SQLITE_OK || p->errorAction == ON_CONFLICT_ACTION_FAIL) {
 				eStatementOp = SAVEPOINT_RELEASE;
-			} else if (p->errorAction == OE_Abort) {
+			} else if (p->errorAction == ON_CONFLICT_ACTION_ABORT) {
 				eStatementOp = SAVEPOINT_ROLLBACK;
 			} else {
 				box_txn_rollback();
@@ -5048,5 +5051,66 @@ sqlite3VdbeRecordUnpackMsgpack(KeyInfo * pKeyInfo,	/* Information about the reco
 			zParse += sz;
 		}
 		pMem++;
+	}
+}
+
+/**
+ * Return action on nullable constraint violation of given column in given table.
+ * FIXME: This is implemented in expensive way. For each invocation table lookup
+ * is performed. In future, first param will be replaced with pointer to struct
+ * space.
+ *
+ * @param tab  pointer to the table
+ * @param column column number for which action to be returned
+ * @return return action found for given column
+ */
+enum on_conflict_action
+table_column_nullable_action(struct Table *tab, uint32_t column)
+{
+	uint32_t space_id = SQLITE_PAGENO_TO_SPACEID(tab->tnum);
+	struct space *space = space_cache_find(space_id);
+
+	assert(space != NULL);
+
+	struct tuple_format *format = space->format;
+
+	assert(format != NULL);
+	assert(format->field_count > column);
+
+	struct tuple_field field = format->fields[column];
+
+	return field.action;
+}
+
+/**
+ * Return nullable flag value of given column in given table.
+ * FIXME: This is implemented in expensive way. For each invocation table lookup
+ * is performed. In future, first param will be replaced with pointer to struct
+ * space.
+ *
+ * @param tab  pointer to the table
+ * @param column column number for which action to be returned
+ * @return return nullability flag value
+ */
+bool
+table_column_is_nullable(struct Table *tab, uint32_t column)
+{
+	/* Temporary hack: until Tarantoool's ephemeral spaces are on-boarded,
+	*  views are not handled properly in Tarantool as well. */
+	if (!(tab->tabFlags | TF_Ephemeral || tab->pSelect != NULL)) {
+		uint32_t space_id = SQLITE_PAGENO_TO_SPACEID(tab->tnum);
+		struct space *space = space_cache_find(space_id);
+
+		assert(space);
+
+		struct tuple_format *format = space->format;
+
+		assert(format);
+		assert(format->field_count > column);
+
+		return format->fields[column].is_nullable;
+	} else {
+		/* tab is ephemeral (in SQLite sense).  */
+		return tab->aCol[column].notNull == 0;
 	}
 }

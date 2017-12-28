@@ -59,9 +59,22 @@ enum field_type {
 	field_type_MAX
 };
 
+enum on_conflict_action {
+	ON_CONFLICT_ACTION_NONE = 0,
+	ON_CONFLICT_ACTION_ROLLBACK,
+	ON_CONFLICT_ACTION_ABORT,
+	ON_CONFLICT_ACTION_FAIL,
+	ON_CONFLICT_ACTION_IGNORE,
+	ON_CONFLICT_ACTION_REPLACE,
+	ON_CONFLICT_ACTION_DEFAULT,
+	on_conflict_action_MAX
+};
+
 /** \endcond public */
 
 extern const char *field_type_strs[];
+
+extern const char *on_conflict_action_strs[];
 
 /** Check if @a new_type can store values of @an old_type. */
 bool
@@ -93,6 +106,8 @@ struct field_def {
 	char *name;
 	/** True, if a field can store NULL. */
 	bool is_nullable;
+	/** Action to perform if NULL contraint failed. */
+	enum on_conflict_action action;
 };
 
 #if defined(__cplusplus)

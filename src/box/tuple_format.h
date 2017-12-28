@@ -99,6 +99,8 @@ struct tuple_field {
 	char *name;
 	/** True, if a field can store NULL. */
 	bool is_nullable;
+	/** Action to perform if NULL contraint failed. */
+	enum on_conflict_action action;
 };
 
 struct mh_strnu32_t;
