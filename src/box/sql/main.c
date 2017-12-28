@@ -955,14 +955,7 @@ sqlite3_total_changes(sqlite3 * db)
 void
 sqlite3CloseSavepoints(Vdbe * pVdbe)
 {
-	sqlite3 * db = pVdbe->db;
-	struct sql_txn* psql_txn = pVdbe->psql_txn;
-	/* If this instruction implements a COMMIT and other VMs are writing
-	 * return an error indicating that the other VMs must complete first.
-	 */
-	psql_txn->nSavepoint = 0;
-	db->nStatement = 0;
-	db->isTransactionSavepoint = 0;
+	pVdbe->anonymous_savepoint = NULL;
 }
 
 /*
@@ -1109,12 +1102,12 @@ sqlite3RollbackAll(Vdbe * pVdbe, int tripCode)
 	sqlite3BtreeLeaveAll(db);
 
 	/* Any deferred constraint violations have now been resolved. */
-	db->nDeferredCons = 0;
-	db->nDeferredImmCons = 0;
+	pVdbe->nDeferredCons = 0;
+	pVdbe->nDeferredImmCons = 0;
 	user_session->sql_flags &= ~SQLITE_DeferFKs;
 
 	/* If one has been configured, invoke the rollback-hook callback */
-	if (db->xRollbackCallback && (inTrans || !db->autoCommit)) {
+	if (db->xRollbackCallback && (inTrans || !pVdbe->autoCommit)) {
 		db->xRollbackCallback(db->pRollbackArg);
 	}
 }

@@ -362,7 +362,15 @@ sqlite3_db_status(sqlite3 * db,	/* The database connection whose status is desir
 	case SQLITE_DBSTATUS_DEFERRED_FKS:{
 			*pHighwater = 0;	/* IMP: R-11967-56545
 			*/
-			*pCurrent = db->nDeferredImmCons>0 || db->nDeferredCons>0;
+			struct txn* ptxn= in_txn();
+			if (ptxn && ptxn->psql_txn){
+				struct sql_txn * psql_txn = (struct sql_txn*)
+					ptxn->psql_txn;
+				*pCurrent = psql_txn->nDeferredImmConsSave>0 ||
+					    psql_txn->nDeferredConsSave>0;
+			}else{
+				*pCurrent = 0;
+			}
 			break;
 		}
 

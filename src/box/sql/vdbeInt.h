@@ -360,6 +360,14 @@ struct ScanStatus {
 struct sql_txn{
 	Savepoint *pSavepoint;	/* List of active savepoints */
 	int nSavepoint;		/* Number of non-transaction savepoints */
+	/*
+	 * This variables transfer deferred constraints from one
+	 * VDBE to the next.
+	 * We have to do it this way because some VDBE execute ddl and do not
+	 * have a transaction.
+	 */
+	i64 nDeferredConsSave;
+	i64 nDeferredImmConsSave;
 };
 
 /*
@@ -386,9 +394,12 @@ struct Vdbe {
 	i64 nFkConstraint;	/* Number of imm. FK constraints this VM */
 	i64 nStmtDefCons;	/* Number of def. constraints when stmt started */
 	i64 nStmtDefImmCons;	/* Number of def. imm constraints when stmt started */
-
-	struct txn_savepoint * statement_savepoint;
+	/* Anonymous savepoint for aborts only */
+	Savepoint * anonymous_savepoint;
 	struct sql_txn* psql_txn;	/* Data related to current transaction */
+	u8 autoCommit;		/* The auto-commit flag. */
+	i64 nDeferredCons;	/* Number of deferred fk violations */
+	i64 nDeferredImmCons;	/* Number of deferred imm fk. */
 
 	/* When allocating a new Vdbe object, all of the fields below should be
 	 * initialized to zero or NULL
@@ -493,6 +504,9 @@ int sqlite3VdbeExec(Vdbe *);
 int sqlite3VdbeList(Vdbe *);
 int
 sql_txn_begin(Vdbe *);
+Savepoint *
+sql_savepoint(Vdbe *p,
+	      const char * zName);
 int sqlite3VdbeHalt(Vdbe *);
 int sqlite3VdbeMemTooBig(Mem *);
 int sqlite3VdbeMemCopy(Mem *, const Mem *);

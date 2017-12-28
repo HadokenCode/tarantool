@@ -1142,12 +1142,6 @@ struct sqlite3 {
 	u8 mTrace;		/* zero or more SQLITE_TRACE flags */
 	u32 magic;		/* Magic number for detect library misuse */
 
-	u8 autoCommit;		/* The auto-commit flag. */
-	u8 isTransactionSavepoint;	/* True if the outermost savepoint is a TS */
-	int nStatement;		/* Number of nested statement-transactions  */
-	i64 nDeferredCons;	/* Net deferred constraints this transaction. */
-	i64 nDeferredImmCons;	/* Net deferred immediate constraints */
-
 	int nChange;		/* Value returned by sqlite3_changes() */
 	int nTotalChange;	/* Value returned by sqlite3_total_changes() */
 	int aLimit[SQLITE_N_LIMIT];	/* Limits */
