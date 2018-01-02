@@ -34,12 +34,9 @@ add_library(sql STATIC
     # Generated files
     opcodes.c
     parse.c
-
     alter.c
     analyze.c
     attach.c
-    bitvec.c
-    btmutex.c
     btree.c
     build.c
     callback.c
@@ -68,9 +65,6 @@ add_library(sql STATIC
     notify.c
     os.c
     os_unix.c
-    pager.c
-    pcache.c
-    pcache1.c
     pragma.c
     prepare.c
     printf.c
@@ -88,7 +82,6 @@ add_library(sql STATIC
     vdbe.c
     vdbeapi.c
     vdbeaux.c
-    vdbeblob.c
     vdbemem.c
     vdbesort.c
     vdbetrace.c

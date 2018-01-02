@@ -206,13 +206,6 @@ static const PragmaName aPragmaName[] = {
 	 /* iArg:      */ SQLITE_ForeignKeys},
 #endif
 #endif
-#if !defined(SQLITE_OMIT_SCHEMA_VERSION_PRAGMAS)
-	{ /* zName:     */ "freelist_count",
-	 /* ePragTyp:  */ PragTyp_HEADER_VALUE,
-	 /* ePragFlg:  */ PragFlg_ReadOnly | PragFlg_Result0,
-	 /* ColNames:  */ 0, 0,
-	 /* iArg:      */ BTREE_FREE_PAGE_COUNT},
-#endif
 #if !defined(SQLITE_OMIT_FLAG_PRAGMAS)
 	{ /* zName:     */ "full_column_names",
 	 /* ePragTyp:  */ PragTyp_FLAG,
@@ -292,13 +285,6 @@ static const PragmaName aPragmaName[] = {
 	 /* ColNames:  */ 0, 0,
 	 /* iArg:      */ SQLITE_RecTriggers},
 #endif
-#if defined(SQLITE_HAS_CODEC)
-	{ /* zName:     */ "rekey",
-	 /* ePragTyp:  */ PragTyp_REKEY,
-	 /* ePragFlg:  */ 0,
-	 /* ColNames:  */ 0, 0,
-	 /* iArg:      */ 0},
-#endif
 #if !defined(SQLITE_OMIT_FLAG_PRAGMAS)
 	{ /* zName:     */ "reverse_unordered_selects",
 	 /* ePragTyp:  */ PragTyp_FLAG,
@@ -312,13 +298,6 @@ static const PragmaName aPragmaName[] = {
 	 /* ePragFlg:  */ PragFlg_NoColumns1 | PragFlg_Result0,
 	 /* ColNames:  */ 0, 0,
 	 /* iArg:      */ BTREE_SCHEMA_VERSION},
-#endif
-#if !defined(SQLITE_OMIT_PAGER_PRAGMAS)
-	{ /* zName:     */ "secure_delete",
-	 /* ePragTyp:  */ PragTyp_SECURE_DELETE,
-	 /* ePragFlg:  */ PragFlg_Result0,
-	 /* ColNames:  */ 0, 0,
-	 /* iArg:      */ 0},
 #endif
 #if !defined(SQLITE_OMIT_FLAG_PRAGMAS) && defined(SQLITE_ENABLE_SELECTTRACE)
 	{ /* zName:     */ "select_trace",
@@ -361,15 +340,6 @@ static const PragmaName aPragmaName[] = {
 	 /* ColNames:  */ 6, 4,
 	 /* iArg:      */ 0},
 #endif
-#if !defined(SQLITE_OMIT_PAGER_PRAGMAS)
-	{ /* zName:     */ "synchronous",
-	 /* ePragTyp:  */ PragTyp_SYNCHRONOUS,
-	 /* ePragFlg:  */
-	 PragFlg_NeedSchema | PragFlg_Result0 | PragFlg_SchemaReq |
-	 PragFlg_NoColumns1,
-	 /* ColNames:  */ 0, 0,
-	 /* iArg:      */ 0},
-#endif
 #if !defined(SQLITE_OMIT_SCHEMA_PRAGMAS)
 	{ /* zName:     */ "table_info",
 	 /* ePragTyp:  */ PragTyp_TABLE_INFO,
@@ -383,13 +353,6 @@ static const PragmaName aPragmaName[] = {
 	 /* ePragFlg:  */ PragFlg_Result0,
 	 /* ColNames:  */ 0, 0,
 	 /* iArg:      */ 0},
-#if !defined(SQLITE_OMIT_SCHEMA_VERSION_PRAGMAS)
-	{ /* zName:     */ "user_version",
-	 /* ePragTyp:  */ PragTyp_HEADER_VALUE,
-	 /* ePragFlg:  */ PragFlg_NoColumns1 | PragFlg_Result0,
-	 /* ColNames:  */ 0, 0,
-	 /* iArg:      */ BTREE_USER_VERSION},
-#endif
 #if !defined(SQLITE_OMIT_FLAG_PRAGMAS)
 #if defined(SQLITE_DEBUG)
 	{ /* zName:     */ "vdbe_addoptrace",
@@ -419,18 +382,6 @@ static const PragmaName aPragmaName[] = {
 	 /* ColNames:  */ 0, 0,
 	 /* iArg:      */ SQLITE_VdbeTrace},
 #endif
-#endif
-#if !defined(SQLITE_OMIT_WAL)
-	{ /* zName:     */ "wal_autocheckpoint",
-	 /* ePragTyp:  */ PragTyp_WAL_AUTOCHECKPOINT,
-	 /* ePragFlg:  */ 0,
-	 /* ColNames:  */ 0, 0,
-	 /* iArg:      */ 0},
-	{ /* zName:     */ "wal_checkpoint",
-	 /* ePragTyp:  */ PragTyp_WAL_CHECKPOINT,
-	 /* ePragFlg:  */ PragFlg_NeedSchema,
-	 /* ColNames:  */ 41, 3,
-	 /* iArg:      */ 0},
 #endif
 #if !defined(SQLITE_OMIT_FLAG_PRAGMAS) && defined(SQLITE_ENABLE_WHERETRACE)
 

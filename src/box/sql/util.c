@@ -67,7 +67,7 @@ sqlite3Coverage(int x)
  */
 #ifndef SQLITE_UNTESTABLE
 int
-sqlite3FaultSim(int iTest)
+   sqlite3FaultSim(int iTest)
 {
 	int (*xCallback) (int) = sqlite3GlobalConfig.xTestCallback;
 	return xCallback ? xCallback(iTest) : SQLITE_OK;
@@ -88,9 +88,7 @@ sqlite3IsNaN(double x)
 #if !SQLITE_HAVE_ISNAN && !HAVE_ISNAN
 	/*
 	 * Systems that support the isnan() library function should probably
-	 * make use of it by compiling with -DSQLITE_HAVE_ISNAN.  But we have
-	 * found that many systems do not have a working isnan() function so
-	 * this implementation is provided as an alternative.
+	 * make use
 	 *
 	 * This NaN test sometimes fails if compiled on GCC with -ffast-math.
 	 * On the other hand, the use of -ffast-math comes with the following

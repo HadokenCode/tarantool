@@ -2919,10 +2919,6 @@ case OP_Savepoint: {
 				iSavepoint = p->nSavepoint - iSavepoint - 1;
 				if (p1==SAVEPOINT_ROLLBACK) {
 					isSchemaChange = (user_session->sql_flags & SQLITE_InternChanges)!=0;
-					rc = sqlite3BtreeTripAllCursors(db->mdb.pBt,
-									SQLITE_ABORT_ROLLBACK,
-									isSchemaChange==0);
-					if (rc!=SQLITE_OK) goto abort_due_to_error;
 				} else {
 					isSchemaChange = 0;
 				}
@@ -3107,7 +3103,6 @@ case OP_Transaction: {
 	assert(p->bIsReader);
 	assert(p->readOnly==0 || pOp->p2==0);
 	assert(pOp->p1==0);
-	assert(DbMaskTest(p->btreeMask, pOp->p1));
 	if (pOp->p2 && (user_session->sql_flags & SQLITE_QueryOnly)!=0) {
 		rc = SQLITE_READONLY;
 		goto abort_due_to_error;
@@ -3136,7 +3131,7 @@ case OP_Transaction: {
 				p->nStatement++;
 				p->iStatement = p->nSavepoint + p->nStatement;
 			}
-			rc = sqlite3BtreeBeginStmt(pBt, p->iStatement, p->nSavepoint);
+			rc = SQLITE_OK;
 
 			/* Store the current value of the database handles deferred constraint
 			 * counter. If the statement transaction needs to be rolled back,
@@ -3151,25 +3146,12 @@ case OP_Transaction: {
 		 * version is checked to ensure that the schema has not changed since the
 		 * SQL statement was prepared.
 		 */
-		sqlite3BtreeGetMeta(pBt, BTREE_SCHEMA_VERSION, (u32 *)&iMeta);
 		iGen = db->mdb.pSchema->iGeneration;
 	} else {
 		iGen = iMeta = 0;
 	}
 	assert(pOp->p5==0 || pOp->p4type==P4_INT32);
-	if (pOp->p5 && (iMeta!=pOp->p3 || iGen!=pOp->p4.i)) {
-		sqlite3DbFree(db, p->zErrMsg);
-		p->zErrMsg = sqlite3DbStrDup(db, "database schema has changed");
-		/* If the schema-cookie from the database file matches the cookie
-		 * stored with the in-memory representation of the schema, do
-		 * not reload the schema from the database file.
-		 */
-		if (db->mdb.pSchema->schema_cookie!=iMeta) {
-			sqlite3ResetOneSchema(db);
-		}
-		p->expired = 1;
-		rc = SQLITE_SCHEMA;
-	}
+
 	if (rc) goto abort_due_to_error;
 	break;
 }
@@ -3183,7 +3165,8 @@ case OP_Transaction: {
  */
 case OP_TTransaction: {
 	if (p->autoCommit) {
-		rc = box_txn_begin() == 0 ? SQLITE_OK : SQLITE_TARANTOOL_ERROR;}
+		rc = box_txn_begin() == 0 ? SQLITE_OK : SQLITE_TARANTOOL_ERROR;
+	}
 	break;
 }
 
@@ -3200,18 +3183,11 @@ case OP_TTransaction: {
  * executing this instruction.
  */
 case OP_ReadCookie: {               /* out2 */
-	int iMeta;
-	int iCookie;
-
 	assert(p->bIsReader);
-	iCookie = pOp->p3;
-	assert(pOp->p3<SQLITE_N_BTREE_META);
 	assert(db->mdb.pBt!=0);
-	assert(DbMaskTest(p->btreeMask, 0));
 
-	sqlite3BtreeGetMeta(db->mdb.pBt, iCookie, (u32 *)&iMeta);
 	pOut = out2Prerelease(p, pOp);
-	pOut->u.i = iMeta;
+	pOut->u.i = 0;
 	break;
 }
 
@@ -3227,15 +3203,11 @@ case OP_ReadCookie: {               /* out2 */
  */
 case OP_SetCookie: {
 	Db *pDb;
-	assert(pOp->p2<SQLITE_N_BTREE_META);
 	assert(pOp->p1==0);
-	assert(DbMaskTest(p->btreeMask, pOp->p1));
 	assert(p->readOnly==0);
 	pDb = &db->mdb;
 	assert(pDb->pBt!=0);
-	assert(sqlite3SchemaMutexHeld(db, 0));
 	/* See note about index shifting on OP_ReadCookie */
-	rc = sqlite3BtreeUpdateMeta(pDb->pBt, pOp->p2, pOp->p3);
 	if (pOp->p2==BTREE_SCHEMA_VERSION) {
 		/* When the schema cookie changes, record the new cookie internally */
 		pDb->pSchema->schema_cookie = pOp->p3;
@@ -3351,14 +3323,12 @@ case OP_OpenWrite:
 	nField = 0;
 	pKeyInfo = 0;
 	p2 = pOp->p2;
-	assert(DbMaskTest(p->btreeMask, 0));
 	pDb = &db->mdb;
 	pX = pDb->pBt;
 	assert(pX!=0);
 	if (pOp->opcode==OP_OpenWrite) {
 		assert(OPFLAG_FORDELETE==BTREE_FORDELETE);
 		wrFlag = BTREE_WRCSR | (pOp->p5 & OPFLAG_FORDELETE);
-		assert(sqlite3SchemaMutexHeld(db, 0));
 		if (pDb->pSchema->file_format < p->minWriteFileFormat) {
 			p->minWriteFileFormat = pDb->pSchema->file_format;
 		}
@@ -3468,10 +3438,8 @@ case OP_OpenTEphemeral: {
 	if ((pCx->pKeyInfo = pKeyInfo = pOp->p4.pKeyInfo) !=0) {
 		int pgno;
 		assert(pOp->p4type == P4_KEYINFO);
-		rc = sqlite3BtreeCreateTable(pCx->pBtx, &pgno, BTREE_BLOBKEY | pOp->p5);
 		if (rc == SQLITE_OK) {
-			assert(pgno == 2);
-			assert(pKeyInfo->db==db);
+			pgno = 3;
 			sqlite3BtreeCursorEphemeral(pCx->pBtx, pgno, BTREE_WRCSR, pKeyInfo,
 						    pCx->uc.pCursor);
 		}
@@ -4143,25 +4111,6 @@ case OP_Delete: {
 	assert(pC->uc.pCursor!=0);
 	assert(pC->deferredMoveto==0);
 
-	/* Only flags that can be set are SAVEPOISTION and AUXDELETE */
-	assert((pOp->p5 & ~(OPFLAG_SAVEPOSITION|OPFLAG_AUXDELETE))==0);
-	assert(OPFLAG_SAVEPOSITION==BTREE_SAVEPOSITION);
-	assert(OPFLAG_AUXDELETE==BTREE_AUXDELETE);
-
-#ifdef SQLITE_DEBUG
-	if (p->pFrame==0) {
-		if (pC->isEphemeral==0
-		    && (pOp->p5 & OPFLAG_AUXDELETE)==0
-		    && (pC->wrFlag & OPFLAG_FORDELETE)==0
-			) {
-			nExtraDelete++;
-		}
-		if (pOp->p2 & OPFLAG_NCHANGE) {
-			nExtraDelete--;
-		}
-	}
-#endif
-
 	rc = sqlite3BtreeDelete(pC->uc.pCursor, pOp->p5);
 	pC->cacheStatus = CACHE_STALE;
 	pC->seekResult = 0;
@@ -4283,10 +4232,6 @@ case OP_RowData: {
 	 */
 	assert(pC->deferredMoveto==0);
 	assert(sqlite3BtreeCursorIsValid(pCrsr));
-#if 0  /* Not required due to the previous to assert() statements */
-	rc = sqlite3VdbeCursorMoveto(pC);
-	if (rc!=SQLITE_OK) goto abort_due_to_error;
-#endif
 
 	n = sqlite3BtreePayloadSize(pCrsr);
 	if (n>(u32)db->aLimit[SQLITE_LIMIT_LENGTH]) {
@@ -4674,7 +4619,7 @@ case OP_IdxDelete: {
 	rc = sqlite3BtreeMovetoUnpacked(pCrsr, &r, 0, 0, &res);
 	if (rc) goto abort_due_to_error;
 	if (res==0) {
-		rc = sqlite3BtreeDelete(pCrsr, BTREE_AUXDELETE);
+		rc = sqlite3BtreeDelete(pCrsr, 0);
 		if (rc) goto abort_due_to_error;
 	}
 	assert(pC->deferredMoveto==0);
@@ -4798,9 +4743,7 @@ case OP_Destroy: {     /* out2 */
 		p->errorAction = OE_Abort;
 		goto abort_due_to_error;
 	} else {
-		assert(DbMaskTest(p->btreeMask, 0));
 		iMoved = 0;  /* Not needed.  Only to silence a warning. */
-		rc = sqlite3BtreeDropTable(db->mdb.pBt, pOp->p1, &iMoved);
 		pOut->flags = MEM_Int;
 		pOut->u.i = iMoved;
 		if (rc) goto abort_due_to_error;
@@ -4828,7 +4771,6 @@ case OP_Destroy: {     /* out2 */
  */
 case OP_Clear: {
 	assert(p->readOnly==0);
-	assert(DbMaskTest(p->btreeMask, pOp->p2));
 	rc = tarantoolSqlite3ClearTable(pOp->p1);
 	if (rc) goto abort_due_to_error;
 	break;
@@ -4875,9 +4817,6 @@ case OP_ParseSchema2: {
 	 * on every btree.  This is a prerequisite for invoking
 	 * sqlite3InitCallback().
 	 */
-#ifdef SQLITE_DEBUG
-	assert(sqlite3BtreeHoldsMutex(db->mdb.pBt));
-#endif
 
 	assert(DbHasProperty(db, DB_SchemaLoaded));
 
@@ -4938,10 +4877,6 @@ case OP_ParseSchema3: {
 	 * on every btree.  This is a prerequisite for invoking
 	 * sqlite3InitCallback().
 	 */
-#ifdef SQLITE_DEBUG
-	assert(sqlite3BtreeHoldsMutex(db->mdb.pBt));
-#endif
-
 	assert(DbHasProperty(db, DB_SchemaLoaded));
 
 	initData.db = db;
@@ -5123,57 +5058,6 @@ case OP_DropTrigger: {
 	sqlite3UnlinkAndDeleteTrigger(db, pOp->p4.z);
 	break;
 }
-
-#ifndef SQLITE_OMIT_INTEGRITY_CHECK
-/* Opcode: IntegrityCk P1 P2 P3 P4 P5
- *
- * Do an analysis of the currently open database.  Store in
- * register P1 the text of an error message describing any problems.
- * If no problems are found, store a NULL in register P1.
- *
- * The register P3 contains the maximum number of allowed errors.
- * At most reg(P3) errors will be reported.
- * In other words, the analysis stops as soon as reg(P1) errors are
- * seen.  Reg(P1) is updated with the number of errors remaining.
- *
- * The root page numbers of all tables in the database are integers
- * stored in P4_INTARRAY argument.
- *
- * If P5 is not zero, the check is done on the auxiliary database
- * file, not the main database file.
- *
- * This opcode is used to implement the integrity_check pragma.
- */
-case OP_IntegrityCk: {
-	/* Number of tables to check.  (Number of root pages.) */
-	int nRoot;
-	int nErr;       /* Number of errors reported */
-	char *z;        /* Text of the error report */
-	Mem *pnErr;     /* Register keeping track of errors remaining */
-
-	assert(p->bIsReader);
-	nRoot = pOp->p2;
-	assert(nRoot>0);
-	assert(pOp->p3>0 && pOp->p3<=(p->nMem+1 - p->nCursor));
-	pnErr = &aMem[pOp->p3];
-	assert((pnErr->flags & MEM_Int)!=0);
-	assert((pnErr->flags & (MEM_Str|MEM_Blob))==0);
-	pIn1 = &aMem[pOp->p1];
-	assert(DbMaskTest(p->btreeMask, pOp->p5));
-	z = sqlite3BtreeIntegrityCheck(db->mdb.pBt, (int)pnErr->u.i, &nErr);
-	pnErr->u.i -= nErr;
-	sqlite3VdbeMemSetNull(pIn1);
-	if (nErr==0) {
-		assert(z==0);
-	} else if (z==0) {
-		goto no_mem;
-	} else {
-		sqlite3VdbeMemSetStr(pIn1, z, -1, 1, sqlite3_free);
-	}
-	UPDATE_MAX_BLOBSIZE(pIn1);
-	break;
-}
-#endif /* SQLITE_OMIT_INTEGRITY_CHECK */
 
 #ifndef SQLITE_OMIT_TRIGGER
 
@@ -5693,30 +5577,20 @@ case OP_Checkpoint: {
  * Write a string containing the final journal-mode to register P2.
  */
 case OP_JournalMode: {    /* out2 */
-	Btree *pBt;                     /* Btree to change journal mode of */
-	Pager *pPager;                  /* Pager associated with pBt */
 	int eNew;                       /* New journal mode */
-	int eOld;                       /* The old journal mode */
 
 	pOut = out2Prerelease(p, pOp);
 	eNew = pOp->p3;
-	assert(eNew==PAGER_JOURNALMODE_DELETE
+	/* assert(eNew==PAGER_JOURNALMODE_DELETE
 	       || eNew==PAGER_JOURNALMODE_TRUNCATE
 	       || eNew==PAGER_JOURNALMODE_PERSIST
 	       || eNew==PAGER_JOURNALMODE_OFF
 	       || eNew==PAGER_JOURNALMODE_MEMORY
 	       || eNew==PAGER_JOURNALMODE_WAL
 	       || eNew==PAGER_JOURNALMODE_QUERY
-		);
+		); */
 	assert(pOp->p1==0);
 	assert(p->readOnly==0);
-
-	pBt = db->mdb.pBt;
-	pPager = sqlite3BtreePager(pBt);
-	eOld = sqlite3PagerGetJournalMode(pPager);
-	if (eNew==PAGER_JOURNALMODE_QUERY) eNew = eOld;
-
-	if (rc) eNew = eOld;
 
 	pOut->flags = MEM_Str|MEM_Static|MEM_Term;
 	pOut->z = (char *)sqlite3JournalModename(eNew);
@@ -5745,44 +5619,6 @@ case OP_Expire: {
 	}
 	break;
 }
-
-#ifndef  SQLITE_OMIT_PAGER_PRAGMAS
-/* Opcode: Pagecount P1 P2 * * *
- *
- * Write the current number of pages in database P1 to memory cell P2.
- */
-case OP_Pagecount: {            /* out2 */
-	pOut = out2Prerelease(p, pOp);
-	pOut->u.i = sqlite3BtreeLastPage(db->mdb.pBt);
-	break;
-}
-#endif
-
-
-#ifndef  SQLITE_OMIT_PAGER_PRAGMAS
-/* Opcode: MaxPgcnt P1 P2 P3 * *
- *
- * Try to set the maximum page count for database P1 to the value in P3.
- * Do not let the maximum page count fall below the current page count and
- * do not change the maximum page count value if P3==0.
- *
- * Store the maximum page count after the change in register P2.
- */
-case OP_MaxPgcnt: {            /* out2 */
-	unsigned int newMax;
-	Btree *pBt;
-
-	pOut = out2Prerelease(p, pOp);
-	pBt = db->mdb.pBt;
-	newMax = 0;
-	if (pOp->p3) {
-		newMax = sqlite3BtreeLastPage(pBt);
-		if (newMax < (unsigned)pOp->p3) newMax = (unsigned)pOp->p3;
-	}
-	break;
-}
-#endif
-
 
 /* Opcode: Init P1 P2 * P4 *
  * Synopsis: Start at P2
@@ -5850,29 +5686,6 @@ case OP_Init: {          /* jump */
 	pOp->p1++;
 	goto jump_to_p2;
 }
-
-#ifdef SQLITE_ENABLE_CURSOR_HINTS
-/* Opcode: CursorHint P1 * * P4 *
- *
- * Provide a hint to cursor P1 that it only needs to return rows that
- * satisfy the Expr in P4.  TK_REGISTER terms in the P4 expression refer
- * to values currently held in registers.  TK_COLUMN terms in the P4
- * expression refer to columns in the b-tree to which cursor P1 is pointing.
- */
-case OP_CursorHint: {
-	VdbeCursor *pC;
-			
-	assert(pOp->p1>=0 && pOp->p1<p->nCursor);
-	assert(pOp->p4type==P4_EXPR);
-	pC = p->apCsr[pOp->p1];
-	if (pC) {
-		assert(pC->eCurType==CURTYPE_BTREE);
-		sqlite3BtreeCursorHint(pC->uc.pCursor, BTREE_HINT_RANGE,
-				       pOp->p4.pExpr, aMem);
-	}
-	break;
-}
-#endif /* SQLITE_ENABLE_CURSOR_HINTS */
 
 /* Opcode: IncMaxid P1 * * * *
  *

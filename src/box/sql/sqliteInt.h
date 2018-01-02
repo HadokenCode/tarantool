@@ -913,41 +913,10 @@ typedef int VList;
  */
 #include "btree.h"
 #include "vdbe.h"
-#include "pager.h"
-#include "pcache.h"
 #include "os.h"
 #include "mutex.h"
 
-/* The SQLITE_EXTRA_DURABLE compile-time option used to set the default
- * synchronous setting to EXTRA.  It is no longer supported.
- */
-#ifdef SQLITE_EXTRA_DURABLE
-#warning Use SQLITE_DEFAULT_SYNCHRONOUS=3 instead of SQLITE_EXTRA_DURABLE
-#define SQLITE_DEFAULT_SYNCHRONOUS 3
-#endif
-
-/*
- * Default synchronous levels.
- *
- * Note that (for historcal reasons) the PAGER_SYNCHRONOUS_* macros differ
- * from the SQLITE_DEFAULT_SYNCHRONOUS value by 1.
- *
- *           PAGER_SYNCHRONOUS       DEFAULT_SYNCHRONOUS
- *   OFF           1                         0
- *   NORMAL        2                         1
- *   FULL          3                         2
- *   EXTRA         4                         3
- *
- * The "PRAGMA synchronous" statement also uses the zero-based numbers.
- * In other words, the zero-based numbers are used for all external interfaces
- * and the one-based values are used internally.
- */
-#ifndef SQLITE_DEFAULT_SYNCHRONOUS
-#define SQLITE_DEFAULT_SYNCHRONOUS (PAGER_SYNCHRONOUS_FULL-1)
-#endif
-#ifndef SQLITE_DEFAULT_WAL_SYNCHRONOUS
-#define SQLITE_DEFAULT_WAL_SYNCHRONOUS SQLITE_DEFAULT_SYNCHRONOUS
-#endif
+typedef u32 Pgno;
 
 /*
  * Each database file to be accessed by the system is an instance
@@ -958,7 +927,6 @@ typedef int VList;
  */
 struct Db {
 	Btree *pBt;		/* The B*Tree structure for this database file */
-	u8 safety_level;	/* How aggressive at syncing data to disk */
 	u8 bSyncSet;		/* True if "PRAGMA synchronous=N" has been run */
 	Schema *pSchema;	/* Pointer to database schema (possibly shared) */
 };
@@ -2881,7 +2849,6 @@ struct Sqlite3Config {
 	int inProgress;		/* True while initialization in progress */
 	int isMutexInit;	/* True after mutexes are initialized */
 	int isMallocInit;	/* True after malloc is initialized */
-	int isPCacheInit;	/* True after malloc is initialized */
 	int nRefInitMutex;	/* Number of users of pInitMutex */
 	sqlite3_mutex *pInitMutex;	/* Mutex used by sqlite3_initialize() */
 	void (*xLog) (void *, int, const char *);	/* Function for logging */
@@ -3246,17 +3213,6 @@ int sqlite3ParseUri(const char *, const char *, unsigned int *,
 #define sqlite3FaultSim(X) SQLITE_OK
 #else
 int sqlite3FaultSim(int);
-#endif
-
-Bitvec *sqlite3BitvecCreate(u32);
-int sqlite3BitvecTest(Bitvec *, u32);
-int sqlite3BitvecTestNotNull(Bitvec *, u32);
-int sqlite3BitvecSet(Bitvec *, u32);
-void sqlite3BitvecClear(Bitvec *, u32, void *);
-void sqlite3BitvecDestroy(Bitvec *);
-u32 sqlite3BitvecSize(Bitvec *);
-#ifndef SQLITE_UNTESTABLE
-int sqlite3BitvecBuiltinTest(int, int *);
 #endif
 
 void sqlite3CreateView(Parse *, Token *, Token *, ExprList *, Select *, int);
