@@ -103,13 +103,12 @@ static struct gc_consumer *backup_gc;
 static bool is_box_configured = false;
 static bool is_ro = true;
 
-static const int REPLICATION_CONNECT_QUORUM_ALL = INT_MAX;
-
 /**
- * Min number of masters to connect for configuration to succeed.
- * If set to REPLICATION_CONNECT_QUORUM_ALL, wait for all masters.
+ * The following flag is set if the instance failed to connect
+ * to a sufficient number of replicas to form a quorum and so
+ * was forced to switch to read-only mode.
  */
-static int replication_connect_quorum = REPLICATION_CONNECT_QUORUM_ALL;
+static bool is_orphan = true;
 
 /* Use the shared instance of xstream for all appliers */
 static struct xstream join_stream;
@@ -134,7 +133,7 @@ static int
 box_check_writable(void)
 {
 	/* box is only writable if box.cfg.read_only == false and */
-	if (is_ro) {
+	if (is_ro || is_orphan) {
 		diag_set(ClientError, ER_READONLY);
 		diag_log();
 		return -1;
@@ -219,6 +218,24 @@ bool
 box_is_ro(void)
 {
 	return is_ro;
+}
+
+void
+box_set_orphan(bool orphan)
+{
+	if (is_orphan == orphan)
+		return; /* nothing to do */
+
+	is_orphan = orphan;
+
+	/*
+	 * Update the title to reflect the new status unless
+	 * the box is still being configured. In the latter
+	 * case the title will be set upon configuration
+	 * completion.
+	 */
+	if (is_box_configured)
+		title(orphan ? "orphan" : "running");
 }
 
 struct wal_stream {
@@ -527,7 +544,7 @@ cfg_get_replication(int *p_count)
  * don't start appliers.
  */
 static void
-box_sync_replication(double timeout, int quorum)
+box_sync_replication(double timeout, enum replicaset_connect_mode mode)
 {
 	int count = 0;
 	struct applier **appliers = cfg_get_replication(&count);
@@ -539,7 +556,7 @@ box_sync_replication(double timeout, int quorum)
 			applier_delete(appliers[i]); /* doesn't affect diag */
 	});
 
-	replicaset_connect(appliers, count, quorum, timeout);
+	replicaset_connect(appliers, count, timeout, mode);
 
 	guard.is_active = false;
 }
@@ -557,9 +574,9 @@ box_set_replication(void)
 	}
 
 	box_check_replication();
-	/* Try to connect to all replicas within the timeout period */
+	/* Try to assemble a quorum within the timeout period. */
 	box_sync_replication(replication_cfg_timeout(),
-			     replication_connect_quorum);
+			     REPLICASET_CONNECT_QUORUM);
 	/* Follow replica */
 	replicaset_follow();
 }
@@ -574,6 +591,8 @@ void
 box_set_replication_connect_quorum(void)
 {
 	replication_connect_quorum = box_check_replication_connect_quorum();
+	if (is_box_configured)
+		replicaset_check_quorum();
 }
 
 void
@@ -1705,7 +1724,6 @@ box_cfg_xc(void)
 				&last_checkpoint_vclock);
 
 		engine_begin_final_recovery_xc();
-		title("orphan");
 		recovery_follow_local(recovery, &wal_stream.base, "hot_standby",
 				      cfg_getd("wal_dir_rescan_delay"));
 		title("hot_standby");
@@ -1756,9 +1774,13 @@ box_cfg_xc(void)
 
 		/** Begin listening only when the local recovery is complete. */
 		box_listen();
+
+		assert(is_orphan);
+		title("orphan");
+
 		/* Wait for the cluster to start up */
-		box_sync_replication(TIMEOUT_INFINITY,
-				     replication_connect_quorum);
+		box_sync_replication(replication_cfg_timeout(),
+				     REPLICASET_TRY_CONNECT_QUORUM);
 	} else {
 		if (!tt_uuid_is_nil(&instance_uuid))
 			INSTANCE_UUID = instance_uuid;
@@ -1778,9 +1800,7 @@ box_cfg_xc(void)
 		 * receive the same replica set UUID when a new cluster
 		 * is deployed.
 		 */
-		box_sync_replication(TIMEOUT_INFINITY,
-				     REPLICATION_CONNECT_QUORUM_ALL);
-
+		box_sync_replication(TIMEOUT_INFINITY, REPLICASET_CONNECT_ALL);
 		/* Bootstrap a new master */
 		bootstrap(&replicaset_uuid);
 	}
@@ -1808,7 +1828,9 @@ box_cfg_xc(void)
 	/* Follow replica */
 	replicaset_follow();
 
-	title("running");
+	if (!is_orphan)
+		title("running");
+
 	say_info("ready to accept requests");
 
 	fiber_gc();

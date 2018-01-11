@@ -52,6 +52,7 @@ uint32_t instance_id = REPLICA_ID_NIL;
 struct tt_uuid REPLICASET_UUID;
 
 double replication_timeout = 1.0; /* seconds */
+int replication_connect_quorum = REPLICATION_CONNECT_QUORUM_ALL;
 
 typedef rb_tree(struct replica) replicaset_t;
 rb_proto(, replicaset_, replicaset_t, struct replica)
@@ -79,6 +80,18 @@ static replicaset_t replicaset;
  * to connect and those that failed to connect.
  */
 static RLIST_HEAD(anon_replicas);
+
+/**
+ * Total number of replicas with attached appliers.
+ */
+static int applier_count;
+
+/**
+ * Number of appliers that have successfully connected
+ * and received their UUIDs and hence contribute to the
+ * quorum.
+ */
+static int connected_applier_count;
 
 void
 replication_init(void)
@@ -239,6 +252,9 @@ replica_on_receive_uuid(struct trigger *trigger, void *event)
 	}
 	if (pause_on_connect)
 		applier_pause(applier);
+
+	connected_applier_count++;
+	replicaset_check_quorum();
 }
 
 /**
@@ -252,6 +268,7 @@ replicaset_update(struct applier **appliers, int count)
 	memset(&uniq, 0, sizeof(uniq));
 	replicaset_new(&uniq);
 	RLIST_HEAD(anon_replicas_new);
+	int anon_replica_count = 0;
 	struct replica *replica, *next;
 
 	auto uniq_guard = make_scoped_guard([&]{
@@ -281,6 +298,7 @@ replicaset_update(struct applier **appliers, int count)
 				       replica_on_receive_uuid, NULL, NULL);
 			trigger_add(&applier->on_state, &replica->on_connect);
 			replica->pause_on_connect = true;
+			anon_replica_count++;
 			continue;
 		}
 
@@ -336,6 +354,9 @@ replicaset_update(struct applier **appliers, int count)
 	}
 	rlist_swap(&anon_replicas, &anon_replicas_new);
 
+	applier_count = count;
+	connected_applier_count = count - anon_replica_count;
+
 	assert(replicaset_first(&uniq) == NULL);
 	replicaset_foreach_safe(&replicaset, replica, next) {
 		if (replica_is_orphan(replica)) {
@@ -386,13 +407,33 @@ applier_on_connect_f(struct trigger *trigger, void *event)
 }
 
 void
-replicaset_connect(struct applier **appliers, int count, int quorum,
-		   double timeout)
+replicaset_connect(struct applier **appliers, int count, double timeout,
+		   enum replicaset_connect_mode mode)
 {
 	if (count == 0) {
 		/* Cleanup the replica set. */
 		replicaset_update(appliers, count);
+		box_set_orphan(false);
 		return;
+	}
+
+	int quorum;
+	bool is_quorum_mandatory;
+	switch (mode) {
+	case REPLICASET_CONNECT_ALL:
+		quorum = count;
+		is_quorum_mandatory = true;
+		break;
+	case REPLICASET_CONNECT_QUORUM:
+		quorum = replication_connect_quorum;
+		is_quorum_mandatory = true;
+		break;
+	case REPLICASET_TRY_CONNECT_QUORUM:
+		quorum = replication_connect_quorum;
+		is_quorum_mandatory = false;
+		break;
+	default:
+		unreachable();
 	}
 
 	quorum = MIN(quorum, count);
@@ -439,7 +480,11 @@ replicaset_connect(struct applier **appliers, int count, int quorum,
 	}
 	if (state.connected < quorum) {
 		/* Timeout or connection failure. */
-		goto error;
+		if (is_quorum_mandatory)
+			goto error;
+		box_set_orphan(true);
+	} else {
+		box_set_orphan(false);
 	}
 
 	for (int i = 0; i < count; i++) {
@@ -472,6 +517,14 @@ replicaset_follow(void)
 	}
 	rlist_foreach_entry(replica, &anon_replicas, in_anon)
 		replica->pause_on_connect = false;
+}
+
+void
+replicaset_check_quorum(void)
+{
+	int quorum = MIN(replication_connect_quorum, applier_count);
+	if (connected_applier_count == quorum)
+		box_set_orphan(false);
 }
 
 void

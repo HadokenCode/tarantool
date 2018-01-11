@@ -89,6 +89,9 @@ box_set_ro(bool ro);
 bool
 box_is_ro(void);
 
+void
+box_set_orphan(bool orphan);
+
 /** True if snapshot is in progress. */
 extern bool box_checkpoint_is_in_progress;
 /** Incremented with each next snapshot. */

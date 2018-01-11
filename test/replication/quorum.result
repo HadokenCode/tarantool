@@ -36,16 +36,80 @@ test_run:cmd('stop server autobootstrap_guest1')
 - true
 ...
 test_run:cmd('restart server test')
-fio = require('fio')
+box.info.status -- running
 ---
+- running
+...
+-- Stop another master. The replica should still restart, but
+-- immediately switch to the 'orphan' mode, which disables
+-- write access. There are three ways for the replica to switch
+-- back to read-write:
+-- * reconfigure replication
+-- * reset box.cfg.replication_connect_quorum
+-- * wait until a quorum is assembled asynchronously
+test_run:cmd('stop server autobootstrap_guest2')
+---
+- true
+...
+test_run:cmd('restart server test')
+box.info.status -- orphan
+---
+- orphan
+...
+box.space.test:replace{100} -- error
+---
+- error: Can't modify data because this instance is in read-only mode.
+...
+box.cfg{replication={}}
+---
+...
+box.info.status -- running
+---
+- running
+...
+test_run:cmd('restart server test')
+box.info.status -- orphan
+---
+- orphan
+...
+box.space.test:replace{100} -- error
+---
+- error: Can't modify data because this instance is in read-only mode.
+...
+box.cfg{replication_connect_quorum = 1}
+---
+...
+box.info.status -- running
+---
+- running
+...
+test_run:cmd('restart server test')
+box.info.status -- orphan
+---
+- orphan
+...
+box.space.test:replace{100} -- error
+---
+- error: Can't modify data because this instance is in read-only mode.
+...
+test_run:cmd('start server autobootstrap_guest2')
+---
+- true
 ...
 fiber = require('fiber')
 ---
 ...
+while box.info.status == 'orphan' do fiber.sleep(0.001) end
+---
+...
+box.info.status -- running
+---
+- running
+...
 SERVERS = {'autobootstrap_guest1', 'autobootstrap_guest2', 'autobootstrap_guest3'}
 ---
 ...
-SOCKET_DIR = fio.cwd()
+SOCKET_DIR = require('fio').cwd()
 ---
 ...
 test_run:cmd("setopt delimiter ';'")

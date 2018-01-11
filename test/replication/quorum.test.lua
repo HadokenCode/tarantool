@@ -18,12 +18,36 @@ test_run:cmd('switch test')
 -- and two other masters are still running.
 test_run:cmd('stop server autobootstrap_guest1')
 test_run:cmd('restart server test')
+box.info.status -- running
 
-fio = require('fio')
+-- Stop another master. The replica should still restart, but
+-- immediately switch to the 'orphan' mode, which disables
+-- write access. There are three ways for the replica to switch
+-- back to read-write:
+-- * reconfigure replication
+-- * reset box.cfg.replication_connect_quorum
+-- * wait until a quorum is assembled asynchronously
+test_run:cmd('stop server autobootstrap_guest2')
+test_run:cmd('restart server test')
+box.info.status -- orphan
+box.space.test:replace{100} -- error
+box.cfg{replication={}}
+box.info.status -- running
+test_run:cmd('restart server test')
+box.info.status -- orphan
+box.space.test:replace{100} -- error
+box.cfg{replication_connect_quorum = 1}
+box.info.status -- running
+test_run:cmd('restart server test')
+box.info.status -- orphan
+box.space.test:replace{100} -- error
+test_run:cmd('start server autobootstrap_guest2')
 fiber = require('fiber')
+while box.info.status == 'orphan' do fiber.sleep(0.001) end
+box.info.status -- running
 
 SERVERS = {'autobootstrap_guest1', 'autobootstrap_guest2', 'autobootstrap_guest3'}
-SOCKET_DIR = fio.cwd()
+SOCKET_DIR = require('fio').cwd()
 test_run:cmd("setopt delimiter ';'")
 function instance_uri(name)
     return SOCKET_DIR .. '/' .. name .. '.sock'

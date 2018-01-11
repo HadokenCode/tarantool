@@ -84,17 +84,27 @@
  * and is implemented in @file vclock.h
  */
 
+#include <limits.h>
+
 #if defined(__cplusplus)
 extern "C" {
 #endif /* defined(__cplusplus) */
 
 struct gc_consumer;
 
+static const int REPLICATION_CONNECT_QUORUM_ALL = INT_MAX;
+
 /**
  * Network timeout. Determines how often master and slave exchange
  * heartbeat messages. Set by box.cfg.replication_timeout.
  */
 extern double replication_timeout;
+
+/**
+ * Min number of masters to connect for configuration to succeed.
+ * If set to REPLICATION_CONNECT_QUORUM_ALL, wait for all masters.
+ */
+extern int replication_connect_quorum;
 
 /**
  * Wait for the given period of time before trying to reconnect
@@ -251,6 +261,29 @@ struct replica *
 replicaset_add(uint32_t replica_id, const struct tt_uuid *instance_uuid);
 
 /**
+ * Desired replica set configuration mode.
+ * Passed to replicaset_connect().
+ */
+enum replicaset_connect_mode {
+	/**
+	 * Connect to all configured replicas.
+	 * Fail configuration otherwise.
+	 */
+	REPLICASET_CONNECT_ALL,
+	/**
+	 * Connect to at least 'quorum' replicas.
+	 * Fail configuration otherwise.
+	 */
+	REPLICASET_CONNECT_QUORUM,
+	/**
+	 * Try to connect to 'quorum' replicas.
+	 * Switch the server into orphan mode on
+	 * failure.
+	 */
+	REPLICASET_TRY_CONNECT_QUORUM,
+};
+
+/**
  * Connect \a quorum appliers to remote peers and receive UUID.
  * Appliers that did not connect will connect asynchronously.
  * On success, update the replica set with new appliers.
@@ -260,16 +293,24 @@ replicaset_add(uint32_t replica_id, const struct tt_uuid *instance_uuid);
  * \param appliers the array of appliers
  * \param count size of appliers array
  * \param timeout connection timeout
+ * \param mode specifies success criteria
  */
 void
-replicaset_connect(struct applier **appliers, int count, int quorum,
-		   double timeout);
+replicaset_connect(struct applier **appliers, int count, double timeout,
+		   enum replicaset_connect_mode mode);
 
 /**
  * Resume all appliers registered with the replica set.
  */
 void
 replicaset_follow(void);
+
+/**
+ * Check if a replication quorum has been formed and
+ * switch the server into read-write mode if so.
+ */
+void
+replicaset_check_quorum(void);
 
 #endif /* defined(__cplusplus) */
 
