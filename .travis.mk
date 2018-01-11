@@ -6,6 +6,14 @@ DOCKER_IMAGE:=packpack/packpack:ubuntu-zesty
 
 all: package
 
+ifeq ("$(shell git rev-parse --abbrev-ref HEAD)", "1.7-next")
+MINOR=$(shell git describe --abbrev=0 | tail -c 2)
+$(eval MINOR=$(shell echo $$(($(MINOR)+1))))
+export VERSION=1.7.$(MINOR).0
+endif
+export RELEASE=0.$(shell git describe --long --always | sed -n 's/^\([0-9\.]*\)-\([0-9]*\)-\([a-z0-9]*\)/\2/p')
+export ABBREV=""
+
 package:
 	git clone https://github.com/packpack/packpack.git packpack
 	./packpack/packpack
